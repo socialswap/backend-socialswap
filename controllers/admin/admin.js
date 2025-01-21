@@ -3,9 +3,15 @@ const router = express.Router();
 const Channel = require('../../models/channel');
 const Transaction = require('../../models/payment');
 const User = require('../../models/user');
+const auth = require('../../middleware/auth')
 
 // Get all transactions with user details
-router.get('/admin/transactions', async (req, res) => {
+router.get('/admin/transactions', auth, async (req, res) => {
+  console.log(req.user);
+  
+  if (req?.user?.role !== "admin") {
+    return res.status(401).json({ message: "invalid user" })
+  }
   try {
     // Add query parameters for filtering
     const query = { status: 'SUCCESS' };
@@ -21,24 +27,17 @@ router.get('/admin/transactions', async (req, res) => {
       };
     }
 
-    // Fetch transactions with populated user details
     const transactions = await Transaction.find(query)
       .sort({ createdAt: -1 })
       .lean()
-      // Only select necessary user fields
       .populate({
         path: 'user',
         model: User,
         select: 'name email role mobile -_id'
       })
-      // Populate order details if needed
       .populate('orderDetails');
 
-      console.log(transactions);
-    // Transform the response to include user details directly
     const transformedTransactions = transactions.map(transaction => {
-      
-      // Handle cases where user might be null
       const userDetails = transaction.user || {
         name: 'Unknown User',
         email: 'N/A',
@@ -77,9 +76,11 @@ router.get('/admin/transactions', async (req, res) => {
   }
 });
 
-
 // Get all channels
-router.get('/admin/channels', async (req, res) => {
+router.get('/admin/channels', auth, async (req, res) => {
+  if (req?.user?.role !== "admin") {
+    return res.status(401).json({ message: "invalid user" })
+  }
   try {
     const channels = await Channel.find({})
       .sort({ createdAt: -1 });
@@ -90,7 +91,10 @@ router.get('/admin/channels', async (req, res) => {
 });
 
 // Toggle most demanding status
-router.patch('/admin/channels/:id/demanding', async (req, res) => {
+router.patch('/admin/channels/:id/demanding', auth, async (req, res) => {
+  if (req?.user?.role !== "admin") {
+    return res.status(401).json({ message: "invalid user" })
+  }
   try {
     const { id } = req.params;
     const { mostDemanding } = req.body;
@@ -112,7 +116,10 @@ router.patch('/admin/channels/:id/demanding', async (req, res) => {
 });
 
 // Get channel by ID
-router.get('/admin/channel/:id', async (req, res) => {
+router.get('/admin/channel/:id', auth, async (req, res) => {
+  if (req?.user?.role !== "admin") {
+    return res.status(401).json({ message: "invalid user" })
+  }
   try {
     const { id } = req.params;
 
@@ -141,7 +148,10 @@ router.get('/admin/channel/:id', async (req, res) => {
 });
 
 // Delete a channel by ID
-router.delete('/admin/channels/:id', async (req, res) => {
+router.delete('/admin/channels/:id', auth, async (req, res) => {
+  if (req?.user?.role !== "admin") {
+    return res.status(401).json({ message: "invalid user" })
+  }
   try {
     const { id } = req.params;
 
@@ -170,7 +180,10 @@ router.delete('/admin/channels/:id', async (req, res) => {
 });
 
 // Approve a channel by ID
-router.patch('/admin/channels/:id/approve', async (req, res) => {
+router.patch('/admin/channels/:id/approve', auth, async (req, res) => {
+  if (req?.user?.role !== "admin") {
+    return res.status(401).json({ message: "invalid user" })
+  }
   try {
     const { id } = req.params;
 
@@ -202,8 +215,5 @@ router.patch('/admin/channels/:id/approve', async (req, res) => {
     });
   }
 });
-
-module.exports = router;
-
 
 module.exports = router;
