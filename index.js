@@ -55,7 +55,7 @@ app.use((req, res, next) => {
 // Middleware for parsing JSON bodies
 app.use(express.json());
 
-app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
+app.use('/uploads',  express.static(path.join('/tmp', 'uploads'), {
   setHeaders: (res, path, stat) => {
     // Allow cross-origin access to files
     res.set('Access-Control-Allow-Origin', '*');
