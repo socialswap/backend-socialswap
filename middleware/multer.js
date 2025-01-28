@@ -5,7 +5,7 @@ const YouTubeChannel = require('../models/channel');
 
 // Create uploads directory if it doesn't exist
 const createUploadsDir = async () => {
-  const uploadsDir = path.join(process.cwd(), 'uploads');
+  const uploadsDir = path.join('/tmp', 'uploads');
   try {
     await fs.access(uploadsDir);
   } catch (error) {
