@@ -92,9 +92,9 @@ router.get('/admin/channels', auth, async (req, res) => {
 
 // Toggle most demanding status
 router.patch('/admin/channels/:id/demanding', auth, async (req, res) => {
-  if (req?.user?.role !== "admin") {
-    return res.status(401).json({ message: "invalid user" })
-  }
+  // if (req?.user?.role !== "admin") {
+  //   return res.status(401).json({ message: "invalid user" })
+  // }
   try {
     const { id } = req.params;
     const { mostDemanding } = req.body;

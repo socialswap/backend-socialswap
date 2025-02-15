@@ -2,6 +2,10 @@ const multer = require('multer');
 const fs = require('fs').promises;
 const path = require('path');
 const YouTubeChannel = require('../models/channel');
+const axios = require('axios')
+// ImgBB API key (replace with your actual API key)
+const IMGBB_API_KEY = '338c0d8da9a3175d9b6e43e47959c3dc';
+const IMGBB_UPLOAD_URL = 'https://api.imgbb.com/1/upload';
 
 // Create uploads directory if it doesn't exist
 const createUploadsDir = async () => {
@@ -14,37 +18,37 @@ const createUploadsDir = async () => {
   return uploadsDir;
 };
 
-// Configure multer storage
-const storage = multer.diskStorage({
-  destination: async function (req, file, cb) {
-    try {
-      const uploadsDir = await createUploadsDir();
-      cb(null, uploadsDir);
-    } catch (error) {
-      cb(new Error('Could not create uploads directory'));
-    }
-  },
-  filename: function (req, file, cb) {
-    // Add file extension validation
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif'];
-    if (!allowedTypes.includes(file.mimetype)) {
-      cb(new Error('Invalid file type. Only JPEG, PNG and GIF are allowed'));
-      return;
-    }
+// // Configure multer storage
+// const storage = multer.diskStorage({
+//   destination: async function (req, file, cb) {
+//     try {
+//       const uploadsDir = await createUploadsDir();
+//       cb(null, uploadsDir);
+//     } catch (error) {
+//       cb(new Error('Could not create uploads directory'));
+//     }
+//   },
+//   filename: function (req, file, cb) {
+//     // Add file extension validation
+//     const allowedTypes = ['image/jpeg', 'image/png', 'image/gif'];
+//     if (!allowedTypes.includes(file.mimetype)) {
+//       cb(new Error('Invalid file type. Only JPEG, PNG and GIF are allowed'));
+//       return;
+//     }
     
-    // Sanitize filename and add field name prefix
-    const sanitizedName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
-    cb(null, `${file.fieldname}-${Date.now()}-${sanitizedName}`);
-  }
-});
+//     // Sanitize filename and add field name prefix
+//     const sanitizedName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
+//     cb(null, `${file.fieldname}-${Date.now()}-${sanitizedName}`);
+//   }
+// });
 
 // Configure multer upload
-const upload = multer({
-  storage: storage,
-  limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB limit
-  }
-});
+// const upload = multer({
+//   storage: storage,
+//   limits: {
+//     fileSize: 5 * 1024 * 1024, // 5MB limit
+//   }
+// });
 
 // Custom file validator middleware
 const validateFiles = async (req, res, next) => {
@@ -97,109 +101,106 @@ const validateFiles = async (req, res, next) => {
 };
 
 // Define upload fields
+
+
+// Set up multer storage to handle file uploads in memory (for ImgBB upload)
+const storage = multer.memoryStorage();  
+const upload = multer({ 
+  storage: storage, 
+  limits: { fileSize: 10 * 1024 * 1024 }  // Limit file size to 10MB
+});
+
 const uploadFields = upload.fields([
   { name: 'banner', maxCount: 1 },
   { name: 'images', maxCount: 4 }
 ]);
 
-// Modified createChannel function
-const createChannel = async (req, res) => {
-  const filePaths = {
-    banner: null,
-    images: []
-  };
-  
+const uploadToImgBB = async (fileBuffer) => {
   try {
-    const { body, user } = req;
-    
-    // Validate required contact information
-    if (!body.userEmail) {
-      throw new Error('Email address is required');
-    }
-    if (!body.contactNumber) {
-      throw new Error('Contact number is required');
-    }
+      // Create URL-encoded form data
+      const formData = new URLSearchParams();
+      formData.append('key', IMGBB_API_KEY);
+      formData.append('image', fileBuffer.toString('base64'));
 
-    // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(body.userEmail)) {
-      throw new Error('Invalid email format');
-    }
+      const response = await axios.post(IMGBB_UPLOAD_URL, formData, {
+          headers: {
+              'Content-Type': 'application/x-www-form-urlencoded'
+          }
+      });
 
-    // Validate contact number format (allows +, digits, spaces, and hyphens)
-    const phoneRegex = /^[+]?[\d\s-]+$/;
-    if (!phoneRegex.test(body.contactNumber)) {
-      throw new Error('Invalid contact number format');
-    }
-
-    // Process uploaded files
-    if (req.files) {
-      if (req.files.banner) {
-        filePaths.banner = path.join('uploads', req.files.banner[0].filename);
+      if (response.data.success) {
+          return response.data.data.url;
+      } else {
+          throw new Error('ImgBB upload failed');
       }
-      if (req.files.images) {
-        // Validate minimum and maximum image requirements
-        if (req.files.images.length < 2) {
-          throw new Error('Minimum 2 images required');
-        }
-        if (req.files.images.length > 4) {
-          throw new Error('Maximum 4 images allowed');
-        }
-        
-        filePaths.images = req.files.images.map(file => 
-          path.join('uploads', file.filename)
-        );
-      }
-    }
-
-    // Create channel data with contact information
-    const channelData = {
-      ...body,
-      bannerUrl: filePaths.banner,
-      imageUrls: filePaths.images,
-      seller: user.userId,
-      status: 'Available',
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      contactInfo: {
-        email: body.userEmail,
-        phone: body.contactNumber
-      }
-    };
-
-    // Remove separate email and phone fields from the main object
-    delete channelData.userEmail;
-    delete channelData.contactNumber;
-
-    const channel = new YouTubeChannel(channelData);
-    const newChannel = await channel.save();
-
-    // Send success response with created channel
-    res.status(201).json({
-      success: true,
-      data: newChannel,
-      message: 'Channel created successfully'
-    });
-
-  } catch (err) {
-    // Clean up uploaded files if there was an error
-    if (filePaths.banner) {
-      await fs.unlink(filePaths.banner).catch(console.error);
-    }
-    if (filePaths.images.length > 0) {
-      await Promise.all(filePaths.images.map(path => 
-        fs.unlink(path).catch(console.error)
-      ));
-    }
-    
-    console.error('Error creating channel:', err);
-    res.status(400).json({ 
-      success: false,
-      message: err.message || 'An error occurred while creating the channel',
-      error: process.env.NODE_ENV === 'development' ? err.stack : undefined
-    });
+  } catch (error) {
+      console.error('ImgBB upload error details:', error.response?.data || error.message);
+      throw new Error('Failed to upload to ImgBB: ' + error.message);
   }
 };
+
+const createChannel = async (req, res) => {
+  const filePaths = {
+      banner: null,
+      images: []
+  };
+
+  try {
+      const { body, files, user } = req;
+
+      if (!body.userEmail || !body.contactNumber) {
+          throw new Error('Email and contact number are required');
+      }
+
+      // Process banner image
+      if (files.banner && files.banner[0]) {
+          filePaths.banner = await uploadToImgBB(files.banner[0].buffer);
+      }
+
+      // Process multiple images
+      if (files.images && files.images.length > 0) {
+          filePaths.images = await Promise.all(
+              files.images.map(file => uploadToImgBB(file.buffer))
+          );
+      }
+
+      const channelData = {
+          ...body,
+          bannerUrl: filePaths.banner,
+          imageUrls: filePaths.images,
+          seller: user.userId,
+          status: 'Available',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          contactInfo: {
+              email: body.userEmail,
+              phone: body.contactNumber
+          }
+      };
+
+      delete channelData.userEmail;
+      delete channelData.contactNumber;
+
+      const channel = new YouTubeChannel(channelData);
+      const newChannel = await channel.save();
+
+      res.status(201).json({
+          success: true,
+          data: newChannel,
+          message: 'Channel created successfully'
+      });
+
+  } catch (err) {
+      console.error('Error creating channel:', err);
+      res.status(400).json({
+          success: false,
+          message: err.message || 'An error occurred while creating the channel',
+          error: process.env.NODE_ENV === 'development' ? err.stack : undefined
+      });
+  }
+};
+
+
 
 // Export the controller
 module.exports = {

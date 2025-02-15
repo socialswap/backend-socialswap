@@ -3,6 +3,9 @@ const mongoose = require('mongoose');
 const multer = require('multer');
 const path = require('path');
 
+// ImgBB API key (replace with your actual API key)
+const IMGBB_API_KEY = '338c0d8da9a3175d9b6e43e47959c3dc';
+const IMGBB_UPLOAD_URL = 'https://api.imgbb.com/1/upload';
 
 
 // Place an order

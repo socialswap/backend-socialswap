@@ -8,6 +8,7 @@ const admin = require('./controllers/admin/admin');
 const order = require('./controllers/orders')
 const app = express();
 const path = require('path');
+const multer = require('multer');
 connectDB();
 
 const corsOptions = {
@@ -17,6 +18,14 @@ const corsOptions = {
   credentials: true,
   maxAge: 86400 // 24 hours
 };
+
+// ImgBB API key (replace with your actual API key)
+const IMGBB_API_KEY = '338c0d8da9a3175d9b6e43e47959c3dc';
+const IMGBB_UPLOAD_URL = 'https://api.imgbb.com/1/upload';
+
+const storage = multer.memoryStorage();
+const upload = multer({ storage: storage });
+
 // Enable Cross-Origin Resource Sharing (CORS)
 app.use(cors());
 
@@ -55,24 +64,60 @@ app.use((req, res, next) => {
 // Middleware for parsing JSON bodies
 app.use(express.json());
 
-app.use('/uploads',  express.static(path.join('/tmp', 'uploads'), {
-  setHeaders: (res, path, stat) => {
-    // Allow cross-origin access to files
-    res.set('Access-Control-Allow-Origin', '*');
-    res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
-    res.set('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
-    
-    // Set caching headers
-    res.set('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
-    
-    // Set content type header based on file extension
-    if (path.endsWith('.png')) {
-      res.set('Content-Type', 'image/png');
-    } else if (path.endsWith('.jpg') || path.endsWith('.jpeg')) {
-      res.set('Content-Type', 'image/jpeg');
-    }
+
+// Image upload route
+app.post('/uploads', upload.single('image'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).send('No image uploaded');
   }
-}));
+
+  try {
+    // Create FormData for ImgBB API
+    const formData = new FormData();
+    formData.append('image', req.file.buffer.toString('base64'));
+
+    // Make a request to ImgBB API
+    const response = await axios.post(IMGBB_UPLOAD_URL, formData, {
+      params: { key: IMGBB_API_KEY },
+      headers: {
+        ...formData.getHeaders(),
+      },
+    });
+
+    // Check if the image upload was successful
+    if (response.data.success) {
+      const imageUrl = response.data.data.url;
+      return res.status(200).send({
+        message: 'Image uploaded successfully!',
+        imageUrl,
+      });
+    } else {
+      return res.status(500).send('Error uploading image');
+    }
+  } catch (error) {
+    console.error(error);
+    return res.status(500).send('An error occurred');
+  }
+});
+
+// app.use('/uploads',  express.static(path.join('/tmp', 'uploads'), {
+//   setHeaders: (res, path, stat) => {
+//     // Allow cross-origin access to files
+//     res.set('Access-Control-Allow-Origin', '*');
+//     res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+//     res.set('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+    
+//     // Set caching headers
+//     res.set('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
+    
+//     // Set content type header based on file extension
+//     if (path.endsWith('.png')) {
+//       res.set('Content-Type', 'image/png');
+//     } else if (path.endsWith('.jpg') || path.endsWith('.jpeg')) {
+//       res.set('Content-Type', 'image/jpeg');
+//     }
+//   }
+// }));
 // Middleware for parsing application/x-www-form-urlencoded bodies
 app.use(express.urlencoded({ extended: false }));
 
