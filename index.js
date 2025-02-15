@@ -12,10 +12,10 @@ const multer = require('multer');
 connectDB();
 
 const corsOptions = {
-  origin: true, // Add your frontend URLs
+
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   // allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true,
+ 
   maxAge: 86400 // 24 hours
 };
 
