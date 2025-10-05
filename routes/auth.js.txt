@@ -1,0 +1,24 @@
+const express = require('express');
+const router = express.Router();
+
+const loginController = require('../controllers/login');
+const signupController = require('../controllers/signup');
+const auth = require('../middleware/auth');
+
+// OTP-based login
+router.post('/send-otp', loginController.sendOtp);
+router.post('/verify-otp', loginController.verifyOtpLogin);
+
+// Optional signup (if you want to pre-register users with name/role)
+router.post('/signup', signupController.signup);
+
+// Example protected route to test JWT middleware
+router.get('/protected', auth, (req, res) => {
+  res.json({
+    success: true,
+    message: 'You have access to this protected route',
+    user: req.user
+  });
+});
+
+module.exports = router;
