@@ -1,8 +1,10 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet'); // For adding security headers
 const connectDB = require('./config/db');
 const youtubeChannelRoutes = require('./routes/routes');
+const bannerRoutes = require('./routes/bannerRoutes');
 const payment = require('./controllers/payment');
 const admin = require('./controllers/admin/admin');
 const order = require('./controllers/orders')
@@ -19,8 +21,8 @@ const corsOptions = {
   maxAge: 86400 // 24 hours
 };
 
-// ImgBB API key (replace with your actual API key)
-const IMGBB_API_KEY = '338c0d8da9a3175d9b6e43e47959c3dc';
+// ImgBB API key from environment variables
+const IMGBB_API_KEY = process.env.IMGBB_API_KEY || '338c0d8da9a3175d9b6e43e47959c3dc';
 const IMGBB_UPLOAD_URL = 'https://api.imgbb.com/1/upload';
 
 const storage = multer.memoryStorage();
@@ -123,6 +125,7 @@ app.use(express.urlencoded({ extended: false }));
 
 // Route for handling API requests
 app.use('/api', youtubeChannelRoutes);
+app.use('/api', bannerRoutes);
 app.use('/api', payment);
 app.use('/api', admin);
 app.use('/api', order);

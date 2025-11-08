@@ -14,15 +14,39 @@ const UserSchema = new mongoose.Schema({
   },
   password: {
     type: String,
-    required: true
-    // Remove the 'select: false' if it was there
+    // Password not required for OAuth or OTP-only users
+    required: function() {
+      return !this.googleId && this.authProvider !== 'email-otp';
+    }
+  },
+  googleId: {
+    type: String,
+    unique: true,
+    sparse: true // Allows null values but ensures uniqueness when present
+  },
+  authProvider: {
+    type: String,
+    enum: ['local', 'google', 'phone', 'email-otp'],
+    default: 'local'
+  },
+  avatar: {
+    type: String
   },
   mobile:{
     type:String
   },
   role:{
     type:String,
-    required:true
+    required:true,
+    default: 'buyer'
+  },
+  emailOtpHash: {
+    type: String,
+    select: false
+  },
+  emailOtpExpires: {
+    type: Date,
+    select: false
   }
   // ... other fields
 });

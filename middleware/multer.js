@@ -152,6 +152,21 @@ const createChannel = async (req, res) => {
           throw new Error('Email and contact number are required');
       }
 
+      // Validate that images are uploaded
+      if (!files || !files.images || files.images.length < 2) {
+          return res.status(400).json({
+              success: false,
+              message: 'Please upload at least 2 images'
+          });
+      }
+
+      if (files.images.length > 4) {
+          return res.status(400).json({
+              success: false,
+              message: 'Maximum 4 images allowed'
+          });
+      }
+
       // Process banner image
       if (files.banner && files.banner[0]) {
           filePaths.banner = await uploadToImgBB(files.banner[0].buffer);

@@ -13,6 +13,8 @@ const router = express.Router();
 const auth = require('../middleware/auth');
 const { signup } = require('../controllers/signup');
 const { login } = require('../controllers/login');
+const { googleLogin } = require('../controllers/googleAuth');
+const { sendEmailOtp, verifyEmailOtp } = require('../controllers/emailOtpAuth');
 const { getCart, addToCart, removeFromCart, updateCartItem, clearCart } = require('../controllers/cart');
 const {getUserProfile,updateUserProfile, updateUserRole, deleteUser, getUser, getAllUsers, changePassword} = require('../controllers/profile')
 const multer = require('multer');
@@ -42,6 +44,9 @@ router.get('/channels', getChannels);
 router.get('/channels/:id', getChannel);
 router.post('/auth/signup',signup);
 router.post('/auth/login', login);
+router.post('/auth/google', googleLogin);
+router.post('/auth/email/send-otp', sendEmailOtp);
+router.post('/auth/email/verify', verifyEmailOtp);
 
 // Create a new channel
 router.post('/channels', uploadFields,validateImageCount, auth, createChannel);

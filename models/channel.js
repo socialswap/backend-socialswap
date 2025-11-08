@@ -24,6 +24,10 @@ const channelSchema = new mongoose.Schema({
     },
     required: [true, 'Channel images are required']
   },
+  bannerUrl: {
+    type: String,
+    default: ''  // Optional banner field - not required
+  },
   price: {
     type: String,
     required: true,
@@ -92,6 +96,10 @@ const channelSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  communityStrike: {
+    type: String,
+    required: true
+  },
   monetized: {
     type: Boolean,
     required: true
@@ -100,10 +108,6 @@ const channelSchema = new mongoose.Schema({
     type: Number,
     required: true,
     min: 0
-  },
-  banner: {
-    type: String,
-    default: ''
   },
   avatar: {
     type: String,
@@ -120,11 +124,6 @@ const channelSchema = new mongoose.Schema({
   status:{
     type:String,
   },
-  bannerUrl: {
-    type: String,
-    required: [true, 'Banner image is required']
-  },
-
   buyer: {
     type: String,
     validate: {
@@ -133,10 +132,6 @@ const channelSchema = new mongoose.Schema({
       },
       message: props => `${props.value} is not a valid email address!`
     }
-  },
-  banner:{
-    type:String,
-    // required:true
   },
   contactInfo: {
     email: {
