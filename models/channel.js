@@ -1,5 +1,23 @@
 const mongoose = require('mongoose');
 
+const CATEGORY_OPTIONS = [
+  'Gaming',
+  'Tech',
+  'Finance',
+  'Artificial intelligence',
+  'Business & Entrepreneurship',
+  'Education',
+  'Health & Fitness',
+  'Food',
+  'Infotainment',
+  'Vlogging',
+  'Sports',
+  'Commentary',
+  'Entertainment',
+  'Music',
+  'Motivation & Self-Improvement'
+];
+
 const channelSchema = new mongoose.Schema({
   name: {
     type: String,
@@ -27,6 +45,10 @@ const channelSchema = new mongoose.Schema({
   bannerUrl: {
     type: String,
     default: ''  // Optional banner field - not required
+  },
+  logoUrl: {
+    type: String,
+    default: ''
   },
   price: {
     type: String,
@@ -65,6 +87,7 @@ const channelSchema = new mongoose.Schema({
   category: {
     type: String,
     required: true,
+    enum: CATEGORY_OPTIONS
   },
   channelType: {
     type: String,

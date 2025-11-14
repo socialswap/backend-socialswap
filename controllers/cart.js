@@ -31,6 +31,8 @@ exports.getCart = async (req, res) => {
             _id: channel._id,
             name: channel.name,
             avatarUrl: channel.avatarUrl,
+            logoUrl: channel.logoUrl || channel.bannerUrl || channel.imageUrls?.[0] || '',
+            bannerUrl: channel.bannerUrl,
             category: channel.category,
             price: channel.soldPrice || channel.price,
             quantity: item.quantity,

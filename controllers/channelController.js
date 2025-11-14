@@ -284,7 +284,7 @@ exports.createChannel = async (req, res) => {
     }
 
     // Assign string fields
-    const stringFields = ['name', 'customUrl', 'description', 'category', 'channelType', 'country', 'copyrightStrike', 'communityStrike', 'my_language'];
+    const stringFields = ['name', 'customUrl', 'description', 'category', 'channelType', 'country', 'copyrightStrike', 'communityStrike', 'my_language', 'logoUrl', 'bannerUrl', 'avatar'];
     stringFields.forEach(field => {
       if (body[field]) {
         channelData[field] = body[field];
@@ -373,6 +373,7 @@ exports.updateChannel = async (req, res) => {
       joinedDate: req.body.joinedDate,
       seller: req.body.seller,
       status: req.body.status,
+      logoUrl: req.body.logoUrl !== undefined ? req.body.logoUrl : existingChannel.logoUrl,
       // Preserve existing image-related fields
       bannerUrl: existingChannel.bannerUrl,
       imageUrls: existingChannel.imageUrls,
