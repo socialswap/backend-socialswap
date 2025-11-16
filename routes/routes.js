@@ -19,6 +19,7 @@ const { getCart, addToCart, removeFromCart, updateCartItem, clearCart } = requir
 const {getUserProfile,updateUserProfile, updateUserRole, deleteUser, getUser, getAllUsers, changePassword} = require('../controllers/profile')
 const multer = require('multer');
 const { upload, createChannel } = require('../middleware/multer');
+const { createBlog, updateBlog, deleteBlog, getBlogs, getAllBlogs, getBlog } = require('../controllers/blogs');
 
 
 const uploadFields = upload.fields([
@@ -87,5 +88,13 @@ router.get('/users', getAllUsers);
 router.get('/users/:userId', getUser);
 router.put('/users/:userId/role', updateUserRole);
 router.delete('/users/:userId', deleteUser);
+
+// Blogs
+router.get('/blogs', getBlogs);
+router.get('/blogs/:id', getBlog);
+router.get('/admin/blogs', auth, getAllBlogs);
+router.post('/admin/blogs', auth, createBlog);
+router.put('/admin/blogs/:id', auth, updateBlog);
+router.delete('/admin/blogs/:id', auth, deleteBlog);
 
 module.exports = router;
