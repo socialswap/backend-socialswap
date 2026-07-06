@@ -1,0 +1,34 @@
+# Dependency directories
+node_modules/
+
+# Local env files (contains db credentials, payment keys, SMTP passwords, etc.)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# User file uploads (multer / temporary uploads)
+uploads/
+temp/
+
+# Log files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+debug.log
+*.log
+
+# Editor & IDE files
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS files
+.DS_Store
+Thumbs.db
