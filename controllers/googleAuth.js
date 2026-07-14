@@ -49,6 +49,12 @@ exports.googleLogin = async (req, res) => {
       });
 
       if (user) {
+        if (user.status && user.status !== 'active') {
+          return res.status(403).json({
+            success: false,
+            message: `Your account is ${user.status}. Please contact support.`
+          });
+        }
         // Update user if they login with Google for the first time
         if (!user.googleId) {
           user.googleId = googleId;
@@ -77,7 +83,7 @@ exports.googleLogin = async (req, res) => {
       const token = jwt.sign(
         { userId: user._id, email: user.email, role: user.role },
         process.env.JWT_SECRET,
-        { expiresIn: '1h' }
+        { expiresIn: '7d' }
       );
 
       res.status(200).json({

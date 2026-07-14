@@ -15,6 +15,11 @@ exports.login = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid credentials' });
     }
 
+    // Check user status
+    if (user.status && user.status !== 'active') {
+      return res.status(403).json({ success: false, message: `Your account is ${user.status}. Please contact support.` });
+    }
+
     // Compare the provided password with the stored hashed password using bcrypt
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
@@ -25,7 +30,7 @@ exports.login = async (req, res) => {
     const token = jwt.sign(
       { userId: user._id, email: user.email,role: user.role },
       process.env.JWT_SECRET,
-      { expiresIn: '1h' }
+      { expiresIn: '7d' }
     );
 
     res.status(200).json({ 

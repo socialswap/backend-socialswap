@@ -52,7 +52,7 @@ const generateSignature = (payload, saltKey, saltIndex) => {
  */
 const createPaymentOrder = async (req, res) => {
   try {
-    const { amount, cartItems } = req.body;
+    const { amount, cartItems, dealId } = req.body;
     const currentUser = req.user;
 
     if (!amount || amount <= 0) {
@@ -62,24 +62,25 @@ const createPaymentOrder = async (req, res) => {
       });
     }
 
-    // Check if any channels are already sold
-    const soldChannels = await Promise.all(
-      cartItems.map(async (item) => {
-        console.log(item);
-        const channel = await YouTubeChannel.findById(item?.id);
-        
-        if (channel && channel.status === 'Sold') {
-          return {
-            channelId: channel._id,
-            name: channel.name
-          };
-        }
-        return null;
-      })
-    );
-
-    // Filter out null values and get list of sold channels
-    const actualSoldChannels = soldChannels.filter(channel => channel !== null);
+    // Check if any channels are already sold (only if cartItems exists)
+    let actualSoldChannels = [];
+    if (cartItems && cartItems.length > 0) {
+      const soldChannels = await Promise.all(
+        cartItems.map(async (item) => {
+          console.log(item);
+          const channel = await YouTubeChannel.findById(item?.id);
+          
+          if (channel && channel.status === 'Sold') {
+            return {
+              channelId: channel._id,
+              name: channel.name
+            };
+          }
+          return null;
+        })
+      );
+      actualSoldChannels = soldChannels.filter(channel => channel !== null);
+    }
 
     // If any channels are sold, return error with details
     if (actualSoldChannels.length > 0) {
@@ -115,6 +116,7 @@ const createPaymentOrder = async (req, res) => {
       amount,
       metadata: {
         cartItems: cartItems || [],
+        dealId: dealId || null,
         initiatedAt: new Date(),
         validatedAt: new Date() // Add validation timestamp
       }
@@ -242,17 +244,26 @@ const checkPaymentStatus = async (req, res) => {
           paymentStatus
         );
 
-        if (transactionStatus === 'SUCCESS' && transaction.metadata?.cartItems) {
-          const cartItemIds = transaction.metadata.cartItems.map(item => 
-            new mongoose.Types.ObjectId(item.id)
-          );
+        if (transactionStatus === 'SUCCESS') {
+          if (transaction.metadata?.cartItems && transaction.metadata.cartItems.length > 0) {
+            const cartItemIds = transaction.metadata.cartItems.map(item => 
+              new mongoose.Types.ObjectId(item.id)
+            );
 
-          // Update all channels in the cart to 'sold' status
-          await Channel.updateMany(
-            { _id: { $in: cartItemIds } },
-            { $set: { status: 'Sold' } }
-          );
+            // Update all channels in the cart to 'sold' status
+            await Channel.updateMany(
+              { _id: { $in: cartItemIds } },
+              { $set: { status: 'Sold' } }
+            );
+          }
 
+          if (transaction.metadata?.dealId) {
+            const EscrowDeal = require('../models/deal');
+            await EscrowDeal.findByIdAndUpdate(transaction.metadata.dealId, {
+              payment: 'paid',
+              paymentDetails: paymentStatus
+            });
+          }
         }
 
         return res.status(200).json({

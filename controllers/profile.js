@@ -93,7 +93,10 @@ exports.changePassword = async (req, res) => {
 // Fetch all users
 exports.getAllUsers = async (req, res) => {
   try {
-    const users = await User.find();
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Access denied: Admin only' });
+    }
+    const users = await User.find().select('-password');
     res.json(users);
   } catch (error) {
     console.error(error);
@@ -104,6 +107,9 @@ exports.getAllUsers = async (req, res) => {
 // Get a specific user
 exports.getUser = async (req, res) => {
   try {
+    if (req.user.role !== 'admin' && req.user.userId !== req.params.userId) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
     const user = await User.findById(req.params.userId).select('-password');
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
@@ -118,6 +124,9 @@ exports.getUser = async (req, res) => {
 // Update user role
 exports.updateUserRole = async (req, res) => {
   try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Access denied: Admin only' });
+    }
     const { role } = req.body;
     const user = await User.findById(req.params.userId);
 
@@ -135,9 +144,42 @@ exports.updateUserRole = async (req, res) => {
   }
 };
 
+// Update user status and role (Admin)
+exports.adminUpdateUser = async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Access denied: Admin only' });
+    }
+    const { role, status } = req.body;
+    const user = await User.findById(req.params.userId);
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    if (role) user.role = role;
+    if (status) {
+      const validStatuses = ['active', 'suspended', 'disabled', 'deleted'];
+      if (!validStatuses.includes(status)) {
+        return res.status(400).json({ message: 'Invalid status value' });
+      }
+      user.status = status;
+    }
+
+    await user.save();
+    res.json({ message: 'User updated successfully', user });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
 // Delete a user
 exports.deleteUser = async (req, res) => {
   try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Access denied: Admin only' });
+    }
     const user = await User.findByIdAndDelete(req.params.userId);
     if (!user) {
       return res.status(404).json({ message: 'User not found' });

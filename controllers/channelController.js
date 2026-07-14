@@ -2,10 +2,7 @@ const YouTubeChannel = require('../models/channel');
 const mongoose = require('mongoose');
 const multer = require('multer');
 const path = require('path');
-
-// ImgBB API key (replace with your actual API key)
-const IMGBB_API_KEY = '338c0d8da9a3175d9b6e43e47959c3dc';
-const IMGBB_UPLOAD_URL = 'https://api.imgbb.com/1/upload';
+const { uploadToR2, deleteFromR2 } = require('../config/r2');
 
 
 // Place an order
@@ -53,7 +50,7 @@ exports.placeOrder = async (req, res) => {
 
 exports.getChannels = async (req, res) => {
   try {
-    const query = { status: 'approved' };
+    const query = { status: { $in: ['Available', 'approved'] } };
 
     // Helper function to parse array filters
     const parseArray = (str) => {
@@ -82,6 +79,8 @@ exports.getChannels = async (req, res) => {
         return null;
       }
     };
+    // Always exclude sold channels
+    query.sold = { $ne: true };
 
     // Handle text search if provided
     if (req.query.channelName) {
@@ -148,6 +147,10 @@ exports.getChannels = async (req, res) => {
 
     if (req.query.copyrightStrike !== undefined) {
       query.copyrightStrike = req.query.copyrightStrike;
+    }
+
+    if (req.query.createdBy) {
+      query.createdBy = req.query.createdBy;
     }
 
     // Sorting
@@ -336,9 +339,6 @@ exports.createChannel = async (req, res) => {
   }
 };
 
-// Update a channel
-// Backend: Updated channel controller
-
 exports.updateChannel = async (req, res) => {
   try {
     // First find the existing channel
@@ -347,8 +347,62 @@ exports.updateChannel = async (req, res) => {
       return res.status(404).json({ message: 'Channel not found' });
     }
 
-    console.log(req);
-    
+    if (existingChannel.createdBy.toString() !== req.user.userId) {
+      return res.status(403).json({ message: 'You are not authorized to update this channel' });
+    }
+
+    // Process banner upload
+    let bannerUrl = existingChannel.bannerUrl;
+    if (req.files && req.files.banner && req.files.banner[0]) {
+      // Delete old banner if it exists
+      if (existingChannel.bannerUrl) {
+        await deleteFromR2(existingChannel.bannerUrl);
+      }
+      bannerUrl = await uploadToR2(req.files.banner[0].buffer, req.files.banner[0].originalname, req.files.banner[0].mimetype);
+    }
+
+    // Process screenshots upload/deletion
+    let newImageUrls = [...existingChannel.imageUrls];
+    if (req.body.existingImages !== undefined) {
+      let keptImages = [];
+      if (req.body.existingImages) {
+        try {
+          keptImages = typeof req.body.existingImages === 'string'
+            ? JSON.parse(req.body.existingImages)
+            : req.body.existingImages;
+          if (!Array.isArray(keptImages)) keptImages = [keptImages];
+        } catch (e) {
+          keptImages = Array.isArray(req.body.existingImages)
+            ? req.body.existingImages
+            : [req.body.existingImages];
+        }
+      }
+
+      // Delete images from R2 that were removed by user
+      const imagesToDelete = existingChannel.imageUrls.filter(url => !keptImages.includes(url));
+      if (imagesToDelete.length > 0) {
+        await Promise.all(imagesToDelete.map(url => deleteFromR2(url)));
+      }
+
+      newImageUrls = keptImages;
+    }
+
+    // Upload new screenshots if any
+    if (req.files && req.files.images && req.files.images.length > 0) {
+      const uploadedUrls = await Promise.all(
+        req.files.images.map(file => uploadToR2(file.buffer, file.originalname, file.mimetype))
+      );
+      newImageUrls = [...newImageUrls, ...uploadedUrls];
+    }
+
+    // Validate screenshot counts
+    if (newImageUrls.length < 2) {
+      return res.status(400).json({ message: 'At least 2 channel screenshots are required' });
+    }
+    if (newImageUrls.length > 4) {
+      return res.status(400).json({ message: 'Maximum 4 channel screenshots are allowed' });
+    }
+
     // Create update data using only the fields that are being updated
     const updateData = {
       name: req.body.name,
@@ -373,23 +427,17 @@ exports.updateChannel = async (req, res) => {
       joinedDate: req.body.joinedDate,
       seller: req.body.seller,
       status: req.body.status,
+      sold: req.body.sold,
       logoUrl: req.body.logoUrl !== undefined ? req.body.logoUrl : existingChannel.logoUrl,
-      // Preserve existing image-related fields
-      bannerUrl: existingChannel.bannerUrl,
-      imageUrls: existingChannel.imageUrls,
-      avatar: existingChannel.avatar
+      bannerUrl: bannerUrl,
+      imageUrls: newImageUrls,
+      avatar: req.body.avatar !== undefined ? req.body.avatar : existingChannel.avatar
     };
 
-    // Remove undefined fields while keeping existing image fields
+    // Remove undefined fields
     Object.keys(updateData).forEach(key => {
       if (updateData[key] === undefined) {
-        // If it's an image-related field, keep the existing value
-        if (key === 'bannerUrl' || key === 'imageUrls' || key === 'avatar') {
-          updateData[key] = existingChannel[key];
-        } else {
-          // For non-image fields, remove if undefined
-          delete updateData[key];
-        }
+        delete updateData[key];
       }
     });
 
@@ -419,12 +467,25 @@ exports.updateChannel = async (req, res) => {
 exports.deleteChannel = async (req, res) => {
   try {
     const channel = await YouTubeChannel.findById(req.params.id);
-    if (channel == null) {
+    if (!channel) {
       return res.status(404).json({ message: 'Channel not found' });
     }
 
-    await channel.remove();
-    res.json({ message: 'Channel deleted' });
+    // Verify ownership or admin privileges (optional, assuming only owner for now)
+    if (channel.createdBy.toString() !== req.user.userId) {
+      return res.status(403).json({ message: 'You are not authorized to delete this channel' });
+    }
+
+    // Delete files from R2
+    if (channel.bannerUrl) {
+      await deleteFromR2(channel.bannerUrl);
+    }
+    if (channel.imageUrls && channel.imageUrls.length > 0) {
+      await Promise.all(channel.imageUrls.map(url => deleteFromR2(url)));
+    }
+
+    await YouTubeChannel.findByIdAndDelete(req.params.id);
+    res.json({ message: 'Channel deleted successfully' });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -457,7 +518,7 @@ exports.searchChannels = async (req, res) => {
   }
 };
 
-// Get channels by seller ID
+// Get channels by the authenticated user (createdBy or seller fallback)
 exports.getChannelsBySeller = async (req, res) => {
   try {
     const { user } = req;
@@ -467,37 +528,36 @@ exports.getChannelsBySeller = async (req, res) => {
       return res.status(401).json({ message: 'User must be authenticated' });
     }
 
-    // Optional query parameters for filtering
-    const query = { seller: user.userId };
-    
-    // Add status filter if provided in query params
+    // Query by createdBy (ObjectId) OR seller (string) for backward compatibility
+    const baseQuery = {
+      $or: [
+        { createdBy: user.userId },
+        { seller: user.userId }
+      ]
+    };
+
+    // Add status filter if provided
     if (req.query.status) {
-      if (!['sold', 'unsold'].includes(req.query.status)) {
-        return res.status(400).json({ message: 'Invalid status value' });
-      }
-      query.status = req.query.status;
+      baseQuery.status = req.query.status;
     }
 
-    // Add pagination
+    // Pagination
     const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
+    const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
 
-    // Get total count for pagination
-    const totalCount = await YouTubeChannel.countDocuments(query);
+    // Get total count
+    const totalCount = await YouTubeChannel.countDocuments(baseQuery);
 
-    // Fetch channels with pagination and sorting
-    const channels = await YouTubeChannel.find(query)
-      .select('-__v') // Exclude version key
-      .sort({ createdAt: -1 }) // Sort by newest first
+    // Fetch channels
+    const channels = await YouTubeChannel.find(baseQuery)
+      .select('-__v')
+      .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
-      .populate('seller', 'name email'); // Populate seller details if needed
+      .lean();
 
-    // Calculate pagination info
     const totalPages = Math.ceil(totalCount / limit);
-    const hasNextPage = page < totalPages;
-    const hasPrevPage = page > 1;
 
     res.status(200).json({
       success: true,
@@ -507,18 +567,50 @@ exports.getChannelsBySeller = async (req, res) => {
           currentPage: page,
           totalPages,
           totalChannels: totalCount,
-          hasNextPage,
-          hasPrevPage,
+          hasNextPage: page < totalPages,
+          hasPrevPage: page > 1,
           limit
         }
       }
     });
 
   } catch (err) {
-    console.error('Error fetching seller channels:', err);
+    console.error('Error fetching user channels:', err);
     res.status(500).json({
       success: false,
       message: 'Error fetching channels',
+      error: err.message
+    });
+  }
+};
+
+// Admin: Get all channels for a specific user (regardless of status)
+exports.getAdminUserChannels = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    const query = {
+      $or: [
+        { createdBy: userId },
+        { seller: userId }
+      ]
+    };
+
+    const channels = await YouTubeChannel.find(query)
+      .select('-__v')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.status(200).json({
+      success: true,
+      channels
+    });
+
+  } catch (err) {
+    console.error('Error fetching admin user channels:', err);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching channels for user',
       error: err.message
     });
   }

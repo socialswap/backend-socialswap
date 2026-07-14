@@ -19,18 +19,34 @@ const CATEGORY_OPTIONS = [
 ];
 
 const channelSchema = new mongoose.Schema({
+  // Who created/listed this channel (reference to User)
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  // Legacy seller field kept for backward compatibility
+  seller: {
+    type: String,
+    required: true
+  },
   name: {
     type: String,
     required: true,
     index: true
+  },
+  // Public YouTube channel link (e.g. https://youtube.com/@channelname)
+  channelLink: {
+    type: String,
+    required: true
   },
   customUrl: {
     type: String,
     required: true,
     unique: true
   },
-  organicGrowth:{
-    type:Boolean
+  organicGrowth: {
+    type: Boolean
   },
   imageUrls: {
     type: [String],
@@ -44,7 +60,7 @@ const channelSchema = new mongoose.Schema({
   },
   bannerUrl: {
     type: String,
-    default: ''  // Optional banner field - not required
+    default: ''  // Optional banner field
   },
   logoUrl: {
     type: String,
@@ -54,11 +70,8 @@ const channelSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
-  paymentId:{
-    type:String,
-  },
-  buyer:{
-    type:String
+  paymentId: {
+    type: String,
   },
   description: {
     type: String,
@@ -136,16 +149,13 @@ const channelSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  sold: {
+    type: Boolean,
+    default: false
+  },
   soldPrice: {
     type: Number,
     min: 0
-  },
-  seller:{
-    type:String,
-    required:true
-  },
-  status:{
-    type:String,
   },
   buyer: {
     type: String,
@@ -155,6 +165,10 @@ const channelSchema = new mongoose.Schema({
       },
       message: props => `${props.value} is not a valid email address!`
     }
+  },
+  status: {
+    type: String,
+    default: 'Available'
   },
   contactInfo: {
     email: {
@@ -168,19 +182,26 @@ const channelSchema = new mongoose.Schema({
       match: [/^[+]?[\d\s-]+$/, 'Please enter a valid phone number']
     }
   },
-mostDemanding: {
-  type: Boolean,
-  default: false
-},
+  mostDemanding: {
+    type: Boolean,
+    default: false
+  },
+  // SEO fields
+  metaTitle: { type: String, trim: true, maxlength: 60 },
+  metaDescription: { type: String, trim: true, maxlength: 160 },
+  seoKeywords: [{ type: String, trim: true }],
+  noIndex: { type: Boolean, default: false },
 }, {
-  timestamps: true // This will add createdAt and updatedAt fields
+  timestamps: true // Adds createdAt and updatedAt fields
 });
 
-// Create text index for search functionality
+// Text index for search
 channelSchema.index({ name: 'text', description: 'text' });
 
-// Create compound index for common filter combinations
+// Compound index for common filter combinations
 channelSchema.index({ category: 1, status: 1, monetized: 1, channelType: 1 });
+channelSchema.index({ createdBy: 1, createdAt: -1 });
+channelSchema.index({ customUrl: 1 });
 
 const Channel = mongoose.model('YouTubeChannel', channelSchema);
 

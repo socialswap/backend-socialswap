@@ -47,8 +47,13 @@ const UserSchema = new mongoose.Schema({
   emailOtpExpires: {
     type: Date,
     select: false
+  },
+  status: {
+    type: String,
+    enum: ['active', 'suspended', 'disabled', 'deleted'],
+    default: 'active',
+    required: true
   }
-  // ... other fields
 });
 
 module.exports = mongoose.model('User', UserSchema);

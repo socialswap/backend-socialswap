@@ -46,6 +46,13 @@ exports.sendEmailOtp = async (req, res) => {
     const lowercaseEmail = email.toLowerCase();
     let user = await User.findOne({ email: lowercaseEmail }).select('+emailOtpExpires');
 
+    if (user && user.status && user.status !== 'active') {
+      return res.status(403).json({
+        success: false,
+        message: `Your account is ${user.status}. Please contact support.`
+      });
+    }
+
     if (!user) {
       const randomPassword = crypto.randomBytes(32).toString('hex');
       const hashedPassword = await bcrypt.hash(randomPassword, 10);
@@ -113,7 +120,21 @@ exports.verifyEmailOtp = async (req, res) => {
     const lowercaseEmail = email.toLowerCase();
     const user = await User.findOne({ email: lowercaseEmail }).select('+emailOtpHash +emailOtpExpires');
 
-    if (!user || !user.emailOtpHash || !user.emailOtpExpires) {
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    if (user.status && user.status !== 'active') {
+      return res.status(403).json({
+        success: false,
+        message: `Your account is ${user.status}. Please contact support.`
+      });
+    }
+
+    if (!user.emailOtpHash || !user.emailOtpExpires) {
       return res.status(400).json({
         success: false,
         message: 'OTP expired or not found. Please request a new OTP.'
@@ -148,7 +169,7 @@ exports.verifyEmailOtp = async (req, res) => {
     const token = jwt.sign(
       { userId: user._id, email: user.email, role: user.role },
       process.env.JWT_SECRET,
-      { expiresIn: '1h' }
+      { expiresIn: '7d' }
     );
 
     res.status(200).json({

@@ -3,7 +3,8 @@ const router = express.Router();
 const Channel = require('../../models/channel');
 const Transaction = require('../../models/payment');
 const User = require('../../models/user');
-const auth = require('../../middleware/auth')
+const auth = require('../../middleware/auth');
+const { deleteFromR2 } = require('../../config/r2');
 
 // Get all transactions with user details
 router.get('/admin/transactions', auth, async (req, res) => {
@@ -155,7 +156,7 @@ router.delete('/admin/channels/:id', auth, async (req, res) => {
   try {
     const { id } = req.params;
 
-    const deletedChannel = await Channel.findByIdAndDelete(id);
+    const deletedChannel = await Channel.findById(id);
 
     if (!deletedChannel) {
       return res.status(404).json({
@@ -163,6 +164,16 @@ router.delete('/admin/channels/:id', auth, async (req, res) => {
         message: 'Channel not found'
       });
     }
+
+    // Delete files from R2
+    if (deletedChannel.bannerUrl) {
+      await deleteFromR2(deletedChannel.bannerUrl);
+    }
+    if (deletedChannel.imageUrls && deletedChannel.imageUrls.length > 0) {
+      await Promise.all(deletedChannel.imageUrls.map(url => deleteFromR2(url)));
+    }
+
+    await Channel.findByIdAndDelete(id);
 
     res.json({
       success: true,

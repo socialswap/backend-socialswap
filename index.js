@@ -13,6 +13,13 @@ const path = require('path');
 const multer = require('multer');
 connectDB();
 
+// Cache control helper
+const cacheControl = (seconds) => (req, res, next) => {
+  res.set('Cache-Control', `public, max-age=${seconds}, stale-while-revalidate=${seconds * 2}`);
+  next();
+};
+const { uploadToR2 } = require('./config/r2');
+
 const corsOptions = {
 
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -63,6 +70,19 @@ app.use((req, res, next) => {
   next();
 });
 
+// Bot detection middleware - adds SEO-friendly headers for crawlers
+app.use((req, res, next) => {
+  const userAgent = req.headers['user-agent'] || '';
+  const botPatterns = [
+    'googlebot', 'bingbot', 'slurp', 'duckduckbot', 'baiduspider',
+    'yandexbot', 'facebookexternalhit', 'twitterbot', 'linkedinbot',
+    'whatsapp', 'telegrambot', 'applebot', 'prerender'
+  ];
+  const isBot = botPatterns.some(bot => userAgent.toLowerCase().includes(bot));
+  req.isBot = isBot;
+  next();
+});
+
 // Middleware for parsing JSON bodies
 app.use(express.json());
 
@@ -74,31 +94,14 @@ app.post('/uploads', upload.single('image'), async (req, res) => {
   }
 
   try {
-    // Create FormData for ImgBB API
-    const formData = new FormData();
-    formData.append('image', req.file.buffer.toString('base64'));
-
-    // Make a request to ImgBB API
-    const response = await axios.post(IMGBB_UPLOAD_URL, formData, {
-      params: { key: IMGBB_API_KEY },
-      headers: {
-        ...formData.getHeaders(),
-      },
+    const imageUrl = await uploadToR2(req.file.buffer, req.file.originalname, req.file.mimetype);
+    return res.status(200).send({
+      message: 'Image uploaded successfully!',
+      imageUrl,
     });
-
-    // Check if the image upload was successful
-    if (response.data.success) {
-      const imageUrl = response.data.data.url;
-      return res.status(200).send({
-        message: 'Image uploaded successfully!',
-        imageUrl,
-      });
-    } else {
-      return res.status(500).send('Error uploading image');
-    }
   } catch (error) {
     console.error(error);
-    return res.status(500).send('An error occurred');
+    return res.status(500).send('An error occurred: ' + error.message);
   }
 });
 
@@ -123,6 +126,33 @@ app.post('/uploads', upload.single('image'), async (req, res) => {
 // Middleware for parsing application/x-www-form-urlencoded bodies
 app.use(express.urlencoded({ extended: false }));
 
+// Serve sitemap at root level
+app.get('/sitemap.xml', async (req, res) => {
+  const { getSitemap } = require('./controllers/sitemapController');
+  getSitemap(req, res);
+});
+
+// Serve robots.txt at root level
+app.get('/robots.txt', (req, res) => {
+  res.set('Content-Type', 'text/plain');
+  res.send(`User-agent: *
+Allow: /
+Disallow: /admin-dashboard
+Disallow: /admin/
+Disallow: /profile
+Disallow: /cart
+Disallow: /orders
+Disallow: /upload-channel
+Disallow: /edit-channel/
+Disallow: /payment-gateway/
+Disallow: /chat
+Disallow: /confirmation/
+Disallow: /login
+Disallow: /signup
+
+Sitemap: https://www.socialswap.in/sitemap.xml`);
+});
+
 // Route for handling API requests
 app.use('/api', youtubeChannelRoutes);
 app.use('/api', bannerRoutes);
@@ -130,6 +160,113 @@ app.use('/api', payment);
 app.use('/api', admin);
 app.use('/api', order);
 
+// Create HTTP server and initialize Socket.IO
+const http = require('http');
+const { Server } = require('socket.io');
+const ChatThread = require('./models/chat');
+
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: "*", // Adjust appropriately in production
+    methods: ["GET", "POST"]
+  }
+});
+
+// Socket.IO Connection Logic
+io.on('connection', (socket) => {
+  console.log('A user connected:', socket.id);
+
+  // User joins their specific chat thread
+  socket.on('join_thread', (threadId) => {
+    socket.join(threadId);
+    console.log(`User ${socket.id} joined thread ${threadId}`);
+  });
+
+  // Global connection for notifications
+  socket.on('global_connect', ({ userId, role }) => {
+    if (role === 'admin') {
+      socket.join('admins');
+      console.log(`Admin joined global notifications: ${socket.id}`);
+    } else if (userId) {
+      socket.join(`user_${userId}`);
+      console.log(`User ${userId} joined global notifications: ${socket.id}`);
+    }
+  });
+
+  // Handle incoming messages
+  socket.on('send_message', async (data) => {
+    try {
+      const { threadId, sender, text, imageUrl, isDealCard, dealId, isChannelCard, channelId } = data;
+      
+      // Save message to DB
+      const thread = await ChatThread.findById(threadId);
+      if (thread) {
+        const newMessage = {
+          sender,
+          text,
+          imageUrl,
+          isDealCard: isDealCard || false,
+          dealId,
+          isChannelCard: isChannelCard || false,
+          channelId
+        };
+        thread.messages.push(newMessage);
+        thread.lastMessageAt = Date.now();
+        await thread.save();
+
+        // Populate the latest message's sender and channelId for the client
+        await thread.populate('messages.sender', 'name avatar role');
+        await thread.populate({
+          path: 'messages.dealId',
+          populate: { path: 'channel', select: 'name price bannerUrl' }
+        });
+        await thread.populate('messages.channelId', 'name price category subscriberCount imageUrls customUrl');
+        const populatedMessage = thread.messages[thread.messages.length - 1];
+
+        io.to(threadId).emit('receive_message', populatedMessage);
+
+        // Global notification logic
+        if (populatedMessage.sender.role !== 'admin') {
+          // If a regular user sends a message, notify admins
+          io.to('admins').emit('global_notification', { threadId: thread._id, message: populatedMessage });
+        } else {
+          // If admin sends a message, notify the specific user
+          io.to(`user_${thread.user.toString()}`).emit('global_notification', { threadId: thread._id, message: populatedMessage });
+        }
+      }
+    } catch (error) {
+      console.error('Socket send_message error:', error);
+    }
+  });
+
+  // Handle read receipts
+  socket.on('mark_read', async ({ threadId, userId }) => {
+    try {
+      const thread = await ChatThread.findById(threadId);
+      if (thread) {
+        let updated = false;
+        thread.messages.forEach(msg => {
+          // If message was sent by someone else, mark it as read
+          if (msg.sender.toString() !== userId && !msg.read) {
+            msg.read = true;
+            updated = true;
+          }
+        });
+        if (updated) {
+          await thread.save();
+        }
+      }
+    } catch (error) {
+      console.error('Socket mark_read error:', error);
+    }
+  });
+
+  socket.on('disconnect', () => {
+    console.log('User disconnected:', socket.id);
+  });
+});
+
 // Start the server
 const PORT = process.env.PORT || 8090;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+server.listen(PORT, () => console.log(`Server running on port ${PORT} with Socket.IO`));
