@@ -1,6 +1,12 @@
 # Dependency directories
 node_modules/
 
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
 # Local env files (contains db credentials, payment keys, SMTP passwords, etc.)
 .env
 .env.local
@@ -13,12 +19,18 @@ uploads/
 temp/
 
 # Log files
+logs/
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 debug.log
-*.log
+
+# Coverage directory used by tools like istanbul
+coverage/
+*.lcov
+.nyc_output
 
 # Editor & IDE files
 .idea/

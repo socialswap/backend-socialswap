@@ -1,25 +1,35 @@
-const ChatThread = require('../models/chat');
+const Conversation = require('../models/chat');
+const Message = require('../models/message');
 const User = require('../models/user');
 const { uploadToR2 } = require('../config/r2');
 
-// Fetch chat thread for a user (or create if it doesn't exist)
+// Fetch chat conversation for a user (or create if it doesn't exist)
 exports.getChatThread = async (req, res) => {
   try {
     const userId = req.user.userId || req.user._id; 
-    let thread = await ChatThread.findOne({ user: userId })
-      .populate('messages.sender', 'name avatar role')
-      .populate({
-        path: 'messages.dealId',
-        populate: { path: 'channel', select: 'name price bannerUrl' }
-      })
-      .populate('messages.channelId', 'name price category subscriberCount imageUrls customUrl');
+    let conversation = await Conversation.findOne({ participants: userId })
+      .populate('participants', 'name email avatar role');
     
-    if (!thread) {
-      thread = new ChatThread({ user: userId });
-      await thread.save();
+    if (!conversation) {
+      // By default, it's a 1-on-1 with admin, but we can just add the user for now
+      conversation = new Conversation({ participants: [userId] });
+      await conversation.save();
+      // fetch again to populate
+      conversation = await Conversation.findById(conversation._id).populate('participants', 'name email avatar role');
     }
     
-    res.status(200).json({ success: true, thread });
+    const messages = await Message.find({ conversationId: conversation._id })
+      .populate('sender', 'name avatar role')
+      .populate({
+        path: 'dealId',
+        populate: { path: 'channel', select: 'name price bannerUrl' }
+      })
+      .populate('channelId', 'name price category subscriberCount imageUrls customUrl')
+      .populate('reactions.user', 'name avatar')
+      .populate('replyTo')
+      .sort({ createdAt: 1 });
+    
+    res.status(200).json({ success: true, thread: conversation, messages });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -28,9 +38,10 @@ exports.getChatThread = async (req, res) => {
 // Admin fetching all chat threads
 exports.getAllThreads = async (req, res) => {
   try {
-    const threads = await ChatThread.find()
-      .populate('user', 'name email avatar')
-      .sort({ lastMessageAt: -1 });
+    const threads = await Conversation.find()
+      .populate('participants', 'name email avatar role')
+      .populate('lastMessage')
+      .sort({ updatedAt: -1 });
     res.status(200).json({ success: true, threads });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -41,18 +52,53 @@ exports.getAllThreads = async (req, res) => {
 exports.getThreadById = async (req, res) => {
   try {
     const { threadId } = req.params;
-    const thread = await ChatThread.findById(threadId)
-      .populate('user', 'name email avatar')
-      .populate('messages.sender', 'name avatar role')
+    const conversation = await Conversation.findById(threadId)
+      .populate('participants', 'name email avatar role');
+      
+    if (!conversation) return res.status(404).json({ success: false, message: 'Thread not found' });
+    
+    const messages = await Message.find({ conversationId: conversation._id })
+      .populate('sender', 'name avatar role')
       .populate({
-        path: 'messages.dealId',
+        path: 'dealId',
         populate: { path: 'channel', select: 'name price bannerUrl' }
       })
-      .populate('messages.channelId', 'name price category subscriberCount imageUrls customUrl');
-      
-    if (!thread) return res.status(404).json({ success: false, message: 'Thread not found' });
+      .populate('channelId', 'name price category subscriberCount imageUrls customUrl')
+      .populate('reactions.user', 'name avatar')
+      .populate('replyTo')
+      .sort({ createdAt: 1 });
     
-    res.status(200).json({ success: true, thread });
+    res.status(200).json({ success: true, thread: conversation, messages });
+  }catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Admin fetching or creating a chat thread for a specific user
+exports.getThreadByUserId = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    let conversation = await Conversation.findOne({ participants: userId })
+      .populate('participants', 'name email avatar role');
+      
+    if (!conversation) {
+      conversation = new Conversation({ participants: [userId] });
+      await conversation.save();
+      conversation = await Conversation.findById(conversation._id).populate('participants', 'name email avatar role');
+    }
+    
+    const messages = await Message.find({ conversationId: conversation._id })
+      .populate('sender', 'name avatar role')
+      .populate({
+        path: 'dealId',
+        populate: { path: 'channel', select: 'name price bannerUrl' }
+      })
+      .populate('channelId', 'name price category subscriberCount imageUrls customUrl')
+      .populate('reactions.user', 'name avatar')
+      .populate('replyTo')
+      .sort({ createdAt: 1 });
+    
+    res.status(200).json({ success: true, thread: conversation, messages });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

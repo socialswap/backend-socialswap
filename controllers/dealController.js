@@ -1,5 +1,6 @@
 const EscrowDeal = require('../models/deal');
-const ChatThread = require('../models/chat');
+const Conversation = require('../models/chat');
+const Message = require('../models/message');
 const Channel = require('../models/channel');
 
 // Admin creates a deal
@@ -13,24 +14,29 @@ exports.createDeal = async (req, res) => {
 
     const adminId = req.user.userId || req.user._id;
 
-    // The thread where the admin is creating the deal (Buyer's thread)
-    let buyerThread;
+    // The conversation where the admin is creating the deal (Buyer's conversation)
+    let buyerConversation;
     if (threadId) {
-      buyerThread = await ChatThread.findById(threadId);
+      buyerConversation = await Conversation.findById(threadId);
     }
     
-    if (!buyerThread && buyerId) {
-      buyerThread = await ChatThread.findOne({ user: buyerId });
+    if (!buyerConversation && buyerId) {
+      buyerConversation = await Conversation.findOne({ participants: buyerId });
     }
 
-    if (!buyerThread && buyerId) {
-      buyerThread = new ChatThread({ user: buyerId, messages: [] });
-      await buyerThread.save();
+    if (!buyerConversation && buyerId) {
+      buyerConversation = new Conversation({ participants: [buyerId] });
+      await buyerConversation.save();
     }
 
-    if (!buyerThread) return res.status(400).json({ success: false, message: 'Buyer or Chat Thread is required' });
+    if (!buyerConversation) return res.status(400).json({ success: false, message: 'Buyer or Conversation is required' });
     
-    const finalBuyerId = buyerId || buyerThread.user;
+    // Find who the actual buyer is (buyerId passed or from conversation)
+    let finalBuyerId = buyerId;
+    if (!finalBuyerId) {
+      const nonAdmin = buyerConversation.participants.find(p => p.toString() !== adminId.toString());
+      finalBuyerId = nonAdmin || buyerConversation.participants[0];
+    }
     const sellerId = channel.createdBy; // Reference to seller
     
     const deal = new EscrowDeal({
@@ -40,7 +46,7 @@ exports.createDeal = async (req, res) => {
       dealPrice: finalDealPrice,
       originalPrice: channel.price,
       createdBy: adminId,
-      chatThread: threadId,
+      chatThread: buyerConversation._id,
       status: 'pending',
       payment: 'notpaid'
     });
@@ -48,32 +54,36 @@ exports.createDeal = async (req, res) => {
     await deal.save();
 
     // 1. Add deal card to Buyer's chat
-    buyerThread.messages.push({
+    const buyerMessage = new Message({
+      conversationId: buyerConversation._id,
       sender: adminId,
-      isDealCard: true,
+      type: 'deal',
+      isDeal: true,
       dealId: deal._id
     });
-    buyerThread.lastMessageAt = Date.now();
-    await buyerThread.save();
+    await buyerMessage.save();
+    buyerConversation.lastMessage = buyerMessage._id;
+    await buyerConversation.save();
 
     // 2. Add deal card to Seller's chat
     // Ensure we don't send it twice if the buyer IS the seller (rare, but possible in testing)
     if (finalBuyerId.toString() !== sellerId.toString()) {
-      let sellerThread = await ChatThread.findOne({ user: sellerId });
-      if (!sellerThread) {
-        sellerThread = new ChatThread({
-          user: sellerId,
-          messages: []
-        });
+      let sellerConversation = await Conversation.findOne({ participants: sellerId });
+      if (!sellerConversation) {
+        sellerConversation = new Conversation({ participants: [sellerId] });
+        await sellerConversation.save();
       }
       
-      sellerThread.messages.push({
+      const sellerMessage = new Message({
+        conversationId: sellerConversation._id,
         sender: adminId,
-        isDealCard: true,
+        type: 'deal',
+        isDeal: true,
         dealId: deal._id
       });
-      sellerThread.lastMessageAt = Date.now();
-      await sellerThread.save();
+      await sellerMessage.save();
+      sellerConversation.lastMessage = sellerMessage._id;
+      await sellerConversation.save();
     }
 
     res.status(201).json({ success: true, deal });

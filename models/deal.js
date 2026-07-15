@@ -44,7 +44,7 @@ const EscrowDealSchema = new mongoose.Schema({
   },
   chatThread: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'ChatThread'
+    ref: 'Conversation'
   }
 }, { timestamps: true });
 

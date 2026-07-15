@@ -29,7 +29,7 @@ const { upload, createChannel } = require('../middleware/multer');
 const { createBlog, updateBlog, deleteBlog, getBlogs, getAllBlogs, getBlog, incrementBlogViews, uploadBlogImage, deleteBlogImage } = require('../controllers/blogs');
 const { getSitemap } = require('../controllers/sitemapController');
 const { getChannelInfo } = require('../controllers/youtubeController');
-const { getChatThread, getAllThreads, getThreadById, uploadChatImage } = require('../controllers/chatController');
+const { getChatThread, getAllThreads, getThreadById, getThreadByUserId, uploadChatImage } = require('../controllers/chatController');
 const { createDeal, updateDealStatus, getAllDeals, getUserDeals, updateDealPaymentStatus } = require('../controllers/dealController');
 
 const uploadFields = upload.fields([
@@ -126,6 +126,7 @@ router.get('/chat', auth, getChatThread);
 router.post('/chat/upload', auth, upload.single('image'), uploadChatImage);
 router.get('/admin/chats', auth, getAllThreads);
 router.get('/admin/chats/:threadId', auth, getThreadById);
+router.get('/admin/chats/user/:userId', auth, getThreadByUserId);
 
 // Deals
 router.post('/admin/deals', auth, createDeal);

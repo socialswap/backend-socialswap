@@ -163,7 +163,8 @@ app.use('/api', order);
 // Create HTTP server and initialize Socket.IO
 const http = require('http');
 const { Server } = require('socket.io');
-const ChatThread = require('./models/chat');
+const Conversation = require('./models/chat');
+const Message = require('./models/message');
 
 const server = http.createServer(app);
 const io = new Server(server, {
@@ -197,42 +198,45 @@ io.on('connection', (socket) => {
   // Handle incoming messages
   socket.on('send_message', async (data) => {
     try {
-      const { threadId, sender, text, imageUrl, isDealCard, dealId, isChannelCard, channelId } = data;
+      const { threadId, sender, text, imageUrl, isDealCard, dealId, isChannelCard, channelId, replyTo } = data;
       
-      // Save message to DB
-      const thread = await ChatThread.findById(threadId);
+      const thread = await Conversation.findById(threadId);
       if (thread) {
-        const newMessage = {
+        const newMessage = new Message({
+          conversationId: threadId,
           sender,
+          type: isDealCard ? 'deal' : isChannelCard ? 'channel' : imageUrl ? 'image' : 'text',
           text,
-          imageUrl,
-          isDealCard: isDealCard || false,
+          mediaUrl: imageUrl,
+          isDeal: isDealCard || false,
           dealId,
-          isChannelCard: isChannelCard || false,
-          channelId
-        };
-        thread.messages.push(newMessage);
-        thread.lastMessageAt = Date.now();
+          isChannel: isChannelCard || false,
+          channelId,
+          replyTo: replyTo || null
+        });
+        await newMessage.save();
+
+        thread.lastMessage = newMessage._id;
         await thread.save();
 
-        // Populate the latest message's sender and channelId for the client
-        await thread.populate('messages.sender', 'name avatar role');
-        await thread.populate({
-          path: 'messages.dealId',
+        await newMessage.populate('sender', 'name avatar role');
+        await newMessage.populate({
+          path: 'dealId',
           populate: { path: 'channel', select: 'name price bannerUrl' }
         });
-        await thread.populate('messages.channelId', 'name price category subscriberCount imageUrls customUrl');
-        const populatedMessage = thread.messages[thread.messages.length - 1];
+        await newMessage.populate('channelId', 'name price category subscriberCount imageUrls customUrl');
+        await newMessage.populate('replyTo');
+        await newMessage.populate('reactions.user', 'name avatar');
 
-        io.to(threadId).emit('receive_message', populatedMessage);
+        io.to(threadId).emit('receive_message', newMessage);
 
-        // Global notification logic
-        if (populatedMessage.sender.role !== 'admin') {
-          // If a regular user sends a message, notify admins
-          io.to('admins').emit('global_notification', { threadId: thread._id, message: populatedMessage });
+        if (newMessage.sender.role !== 'admin') {
+          io.to('admins').emit('global_notification', { threadId: thread._id, message: newMessage });
         } else {
-          // If admin sends a message, notify the specific user
-          io.to(`user_${thread.user.toString()}`).emit('global_notification', { threadId: thread._id, message: populatedMessage });
+          const otherParticipant = thread.participants.find(p => p.toString() !== sender.toString());
+          if (otherParticipant) {
+            io.to(`user_${otherParticipant.toString()}`).emit('global_notification', { threadId: thread._id, message: newMessage });
+          }
         }
       }
     } catch (error) {
@@ -243,22 +247,32 @@ io.on('connection', (socket) => {
   // Handle read receipts
   socket.on('mark_read', async ({ threadId, userId }) => {
     try {
-      const thread = await ChatThread.findById(threadId);
-      if (thread) {
-        let updated = false;
-        thread.messages.forEach(msg => {
-          // If message was sent by someone else, mark it as read
-          if (msg.sender.toString() !== userId && !msg.read) {
-            msg.read = true;
-            updated = true;
-          }
-        });
-        if (updated) {
-          await thread.save();
-        }
-      }
+      await Message.updateMany(
+        { conversationId: threadId, sender: { $ne: userId }, read: false },
+        { $set: { read: true, status: 'seen' } }
+      );
     } catch (error) {
       console.error('Socket mark_read error:', error);
+    }
+  });
+
+  // Handle message reactions
+  socket.on('add_reaction', async ({ messageId, userId, reaction }) => {
+    try {
+      const msg = await Message.findById(messageId);
+      if (msg) {
+        msg.reactions = msg.reactions.filter(r => r.user.toString() !== userId);
+        if (reaction) {
+          msg.reactions.push({ user: userId, reaction });
+        }
+        await msg.save();
+        await msg.populate('sender', 'name avatar role');
+        await msg.populate('reactions.user', 'name avatar');
+        await msg.populate('replyTo');
+        io.to(msg.conversationId.toString()).emit('message_updated', msg);
+      }
+    } catch (error) {
+      console.error('Socket add_reaction error:', error);
     }
   });
 
