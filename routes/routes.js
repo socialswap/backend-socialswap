@@ -8,7 +8,8 @@ const {
   searchChannels,
   getChannelsBySeller,
   demandingChannel,
-  getAdminUserChannels
+  getAdminUserChannels,
+  getChannelByUsername
 } = require('../controllers/channelController');
 const router = express.Router();
 const auth = require('../middleware/auth');
@@ -23,7 +24,7 @@ const { login } = require('../controllers/login');
 const { googleLogin } = require('../controllers/googleAuth');
 const { sendEmailOtp, verifyEmailOtp } = require('../controllers/emailOtpAuth');
 const { getCart, addToCart, removeFromCart, updateCartItem, clearCart } = require('../controllers/cart');
-const {getUserProfile,updateUserProfile, updateUserRole, deleteUser, getUser, getAllUsers, changePassword, adminUpdateUser} = require('../controllers/profile')
+const {getUserProfile,updateUserProfile, updateUserRole, deleteUser, getUser, getAllUsers, changePassword, adminUpdateUser, uploadAvatar} = require('../controllers/profile')
 const multer = require('multer');
 const { upload, createChannel } = require('../middleware/multer');
 const { createBlog, updateBlog, deleteBlog, getBlogs, getAllBlogs, getBlog, incrementBlogViews, uploadBlogImage, deleteBlogImage } = require('../controllers/blogs');
@@ -54,7 +55,9 @@ router.get('/', (req,res)=> res.status(200).json({message:'success'}));
 // Channels — public routes with caching
 router.get('/channels/demanding', cache(300), demandingChannel);  // 5 min cache
 router.get('/channels', cache(300), getChannels);                  // 5 min cache
-router.get('/channels/:id', cache(300), getChannel);               // 5 min cache
+router.post('/channels/filter', getChannels);                      // POST route for body filters
+router.get('/channels/username/:username', cache(300), getChannelByUsername); // fetch by username/slug
+router.get('/channels/:id', cache(300), getChannel);               // 5 min cache (kept for backward compat)
 router.post('/auth/signup',signup);
 router.post('/auth/login', login);
 router.post('/auth/google', googleLogin);
@@ -97,6 +100,7 @@ router.delete('/cart/clear', auth, clearCart);
 
 router.get('/profile', auth, getUserProfile);
 router.put('/profile', auth, updateUserProfile);
+router.post('/profile/avatar', auth, upload.single('avatar'), uploadAvatar);
 router.put('/changePassword', auth, changePassword);
 
 router.get('/users', auth, getAllUsers);

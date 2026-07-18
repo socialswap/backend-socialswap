@@ -50,6 +50,7 @@ exports.placeOrder = async (req, res) => {
 
 exports.getChannels = async (req, res) => {
   try {
+    req.query = { ...req.query, ...req.body };
     const query = { status: { $in: ['Available', 'approved'] } };
 
     // Helper function to parse array filters
@@ -140,10 +141,31 @@ exports.getChannels = async (req, res) => {
       query.channelType = { $in: channelTypes };
     }
 
-    // Handle boolean filters
+    // Handle boolean and specific monetization filters
     if (req.query.monetized !== undefined) {
       query.monetized = req.query.monetized === 'true';
     }
+    if (req.query.monetization) {
+      if (req.query.monetization === 'monetized') {
+        query.monetized = true;
+      } else if (req.query.monetization === 'non-monetized') {
+        query.monetized = false;
+      }
+    }
+
+    if (req.query.maxPrice || req.query.minPrice) {
+      const min = req.query.minPrice ? parseInt(req.query.minPrice) : 0;
+      const max = req.query.maxPrice ? parseInt(req.query.maxPrice) : Number.MAX_SAFE_INTEGER;
+      
+      // We use $expr and $toDouble because price is stored as a String in the schema
+      query.$expr = { 
+        $and: [ 
+          { $gte: [{ $toDouble: "$price" }, min] },
+          { $lte: [{ $toDouble: "$price" }, max] }
+        ]
+      };
+    }
+
 
     if (req.query.copyrightStrike !== undefined) {
       query.copyrightStrike = req.query.copyrightStrike;
@@ -198,10 +220,10 @@ exports.getChannels = async (req, res) => {
   }
 };
 
-// Get a single channel
+// Get a single channel by MongoDB _id
 exports.getChannel = async (req, res) => {
   try {
-    const channel = await YouTubeChannel.findById(req.params.id);
+    const channel = await YouTubeChannel.findById(req.params.id).populate('createdBy', 'name email avatar');
     if (channel == null) {
       return res.status(404).json({ message: 'Channel not found' });
     }
@@ -210,6 +232,25 @@ exports.getChannel = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
+// Get a single channel by customUrl username (slug) — also falls back to _id for old links
+exports.getChannelByUsername = async (req, res) => {
+  try {
+    const { username } = req.params;
+    // Try customUrl first (exact match), then fallback to _id
+    let channel = await YouTubeChannel.findOne({ customUrl: username }).populate('createdBy', 'name email avatar');
+    if (!channel && username.match(/^[0-9a-fA-F]{24}$/)) {
+      channel = await YouTubeChannel.findById(username).populate('createdBy', 'name email avatar');
+    }
+    if (!channel) {
+      return res.status(404).json({ message: 'Channel not found' });
+    }
+    res.json(channel);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 
 exports.demandingChannel= async (req, res) => {
   try {
@@ -347,7 +388,7 @@ exports.updateChannel = async (req, res) => {
       return res.status(404).json({ message: 'Channel not found' });
     }
 
-    if (existingChannel.createdBy.toString() !== req.user.userId) {
+    if (existingChannel.createdBy.toString() !== req.user.userId && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'You are not authorized to update this channel' });
     }
 
@@ -434,6 +475,13 @@ exports.updateChannel = async (req, res) => {
       avatar: req.body.avatar !== undefined ? req.body.avatar : existingChannel.avatar
     };
 
+    if (req.body.userEmail !== undefined || req.body.contactNumber !== undefined) {
+      updateData.contactInfo = {
+        email: req.body.userEmail !== undefined ? req.body.userEmail : (existingChannel.contactInfo ? existingChannel.contactInfo.email : ''),
+        phone: req.body.contactNumber !== undefined ? req.body.contactNumber : (existingChannel.contactInfo ? existingChannel.contactInfo.phone : '')
+      };
+    }
+
     // Remove undefined fields
     Object.keys(updateData).forEach(key => {
       if (updateData[key] === undefined) {
@@ -471,8 +519,8 @@ exports.deleteChannel = async (req, res) => {
       return res.status(404).json({ message: 'Channel not found' });
     }
 
-    // Verify ownership or admin privileges (optional, assuming only owner for now)
-    if (channel.createdBy.toString() !== req.user.userId) {
+    // Verify ownership or admin privileges
+    if (channel.createdBy.toString() !== req.user.userId && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'You are not authorized to delete this channel' });
     }
 

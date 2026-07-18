@@ -120,7 +120,8 @@ exports.getAllDeals = async (req, res) => {
     const deals = await EscrowDeal.find()
       .populate('buyer', 'name email')
       .populate('seller', 'name email')
-      .populate('channel', 'name price');
+      .populate('channel', 'name price')
+      .sort({ createdAt: -1 });
     res.status(200).json({ success: true, deals });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -136,7 +137,8 @@ exports.getUserDeals = async (req, res) => {
     })
       .populate('buyer', 'name email')
       .populate('seller', 'name email')
-      .populate('channel', 'name price');
+      .populate('channel', 'name price')
+      .sort({ createdAt: -1 });
     res.status(200).json({ success: true, deals });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -160,6 +162,12 @@ exports.updateDealPaymentStatus = async (req, res) => {
     deal.payment = payment;
     if (payment === 'paid') {
       deal.paymentDetails = { manualOverride: true, updatedBy: req.user.userId || req.user._id, updatedAt: new Date() };
+      
+      if (deal.channel) {
+        await Channel.findByIdAndUpdate(deal.channel, {
+          $set: { status: 'Sold', sold: true }
+        });
+      }
     }
     await deal.save();
 

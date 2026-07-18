@@ -206,7 +206,13 @@ const checkPaymentStatus = async (req, res) => {
       else if (mappedStatus === 'PENDING') dealPaymentStatus = 'pending';
       
       try {
-        await EscrowDeal.findByIdAndUpdate(transaction.metadata.dealId, { payment: dealPaymentStatus });
+        const updatedDeal = await EscrowDeal.findByIdAndUpdate(transaction.metadata.dealId, { payment: dealPaymentStatus });
+        
+        if (dealPaymentStatus === 'paid' && updatedDeal && updatedDeal.channel) {
+          await YouTubeChannel.findByIdAndUpdate(updatedDeal.channel, {
+            $set: { status: 'Sold', sold: true }
+          });
+        }
       } catch (err) {
         console.error('Failed to update deal payment status:', err);
       }
@@ -215,7 +221,7 @@ const checkPaymentStatus = async (req, res) => {
         const channelIds = transaction.metadata.cartItems.map(item => item.id);
         await YouTubeChannel.updateMany(
           { _id: { $in: channelIds } },
-          { $set: { status: 'Sold' } }
+          { $set: { status: 'Sold', sold: true } }
         );
       } catch (err) {
         console.error('Failed to update channel status:', err);

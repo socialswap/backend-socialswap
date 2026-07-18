@@ -201,7 +201,7 @@ channelSchema.index({ name: 'text', description: 'text' });
 // Compound index for common filter combinations
 channelSchema.index({ category: 1, status: 1, monetized: 1, channelType: 1 });
 channelSchema.index({ createdBy: 1, createdAt: -1 });
-channelSchema.index({ customUrl: 1 });
+channelSchema.index({ customUrl: 1 }, { unique: true, sparse: true }); // fast username lookup
 
 const Channel = mongoose.model('YouTubeChannel', channelSchema);
 

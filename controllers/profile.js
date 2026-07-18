@@ -1,6 +1,7 @@
 // controllers/userController.js
 const User = require('../models/user');
 const bcrypt = require('bcryptjs');
+const { uploadToR2, deleteFromR2 } = require('../config/r2');
 
 exports.getUserProfile = async (req, res) => {    
   try {
@@ -15,9 +16,43 @@ exports.getUserProfile = async (req, res) => {
   }
 };
 
+exports.uploadAvatar = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'No file uploaded' });
+    }
+
+    const user = await User.findById(req.user.userId);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    // Delete existing avatar if it exists
+    if (user.avatar) {
+      await deleteFromR2(user.avatar);
+    }
+
+    // Upload new avatar to R2
+    const avatarUrl = await uploadToR2(
+      req.file.buffer,
+      req.file.originalname,
+      req.file.mimetype
+    );
+
+    // Save to user
+    user.avatar = avatarUrl;
+    await user.save();
+
+    res.json({ success: true, url: avatarUrl, message: 'Avatar updated successfully' });
+  } catch (error) {
+    console.error('Avatar upload error:', error);
+    res.status(500).json({ success: false, message: 'Failed to upload avatar', error: error.message });
+  }
+};
+
 exports.updateUserProfile = async (req, res) => {
   try {
-    const { name, email, password, role, currentPassword } = req.body;
+    const { name, email, password, role, currentPassword, mobile } = req.body;
     const user = await User.findById(req.user.userId);
 
     if (!user) {
@@ -44,6 +79,7 @@ exports.updateUserProfile = async (req, res) => {
     if (name) user.name = name;
     if (email) user.email = email;
     if (role) user.role = role;
+    if (mobile) user.mobile = mobile;
 
     await user.save();
 
