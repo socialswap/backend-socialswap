@@ -31,6 +31,8 @@ const { getSitemap } = require('../controllers/sitemapController');
 const { getChannelInfo } = require('../controllers/youtubeController');
 const { getChatThread, getAllThreads, getThreadById, getThreadByUserId, uploadChatImage } = require('../controllers/chatController');
 const { createDeal, updateDealStatus, getAllDeals, getUserDeals, updateDealPaymentStatus } = require('../controllers/dealController');
+const { getAllServices, getServiceBySlug, getAdminServices, createService, updateService, deleteService } = require('../controllers/serviceController');
+const { subscribe, unsubscribe } = require('../controllers/pushController');
 
 const uploadFields = upload.fields([
   { name: 'banner', maxCount: 1 },
@@ -134,5 +136,19 @@ router.get('/admin/deals', auth, getAllDeals);
 router.patch('/admin/deals/:id/payment', auth, updateDealPaymentStatus);
 router.patch('/deals/:id/status', auth, updateDealStatus);
 router.get('/deals', auth, getUserDeals);
+
+// Services — public
+router.get('/services', getAllServices);
+router.get('/services/:slug', getServiceBySlug);
+
+// Services — admin
+router.get('/admin/services', auth, getAdminServices);
+router.post('/admin/services', auth, upload.array('images', 8), createService);
+router.put('/admin/services/:id', auth, upload.array('images', 8), updateService);
+router.delete('/admin/services/:id', auth, deleteService);
+
+// Push Notifications
+router.post('/push/subscribe', auth, subscribe);
+router.post('/push/unsubscribe', auth, unsubscribe);
 
 module.exports = router;

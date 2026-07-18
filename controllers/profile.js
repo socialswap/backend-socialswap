@@ -96,8 +96,22 @@ exports.getAllUsers = async (req, res) => {
     if (req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Access denied: Admin only' });
     }
-    const users = await User.find().select('-password');
-    res.json(users);
+    const users = await User.find().select('-password').lean();
+    
+    const YouTubeChannel = require('../models/channel');
+    const usersWithChannelCount = await Promise.all(
+      users.map(async (user) => {
+        const channelCount = await YouTubeChannel.countDocuments({
+          $or: [
+            { createdBy: user._id },
+            { seller: user._id.toString() }
+          ]
+        });
+        return { ...user, channelCount };
+      })
+    );
+    
+    res.json(usersWithChannelCount);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });

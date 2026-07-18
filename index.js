@@ -11,6 +11,14 @@ const order = require('./controllers/orders')
 const app = express();
 const path = require('path');
 const multer = require('multer');
+const webpush = require('web-push');
+const PushSubscription = require('./models/pushSubscription');
+
+webpush.setVapidDetails(
+  process.env.VAPID_SUBJECT || 'mailto:admin@socialswap.com',
+  process.env.VAPID_PUBLIC_KEY,
+  process.env.VAPID_PRIVATE_KEY
+);
 connectDB();
 
 // Cache control helper
@@ -232,10 +240,50 @@ io.on('connection', (socket) => {
 
         if (newMessage.sender.role !== 'admin') {
           io.to('admins').emit('global_notification', { threadId: thread._id, message: newMessage });
+          
+          // Send push to admins
+          try {
+            const adminUsers = await require('./models/user').find({ role: 'admin' });
+            const adminIds = adminUsers.map(a => a._id);
+            const subscriptions = await PushSubscription.find({ userId: { $in: adminIds } });
+            
+            const payload = JSON.stringify({
+              title: `New message from ${newMessage.sender.name}`,
+              body: newMessage.text || (newMessage.mediaUrl ? 'Sent an image' : 'Sent an update'),
+              url: `/admin/chats` // Redirect URL for admin
+            });
+            
+            for (let sub of subscriptions) {
+              webpush.sendNotification(sub, payload).catch(err => {
+                if (err.statusCode === 410) {
+                  PushSubscription.deleteOne({ _id: sub._id }).exec();
+                }
+              });
+            }
+          } catch(err) { console.error('Push error:', err); }
+
         } else {
           const otherParticipant = thread.participants.find(p => p.toString() !== sender.toString());
           if (otherParticipant) {
             io.to(`user_${otherParticipant.toString()}`).emit('global_notification', { threadId: thread._id, message: newMessage });
+            
+            // Send push to the user
+            try {
+              const subscriptions = await PushSubscription.find({ userId: otherParticipant });
+              const payload = JSON.stringify({
+                title: `New message from Admin`,
+                body: newMessage.text || (newMessage.mediaUrl ? 'Sent an image' : 'Sent an update'),
+                url: `/chat` // Redirect URL for user
+              });
+              
+              for (let sub of subscriptions) {
+                webpush.sendNotification(sub, payload).catch(err => {
+                  if (err.statusCode === 410) {
+                    PushSubscription.deleteOne({ _id: sub._id }).exec();
+                  }
+                });
+              }
+            } catch(err) { console.error('Push error:', err); }
           }
         }
       }
