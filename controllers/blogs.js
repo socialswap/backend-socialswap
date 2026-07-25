@@ -10,12 +10,12 @@ function isObjectId(str) {
 exports.createBlog = async (req, res) => {
   try {
     const { title, excerpt, content, imageUrl, ogImage, author, authorAvatar, published, featured,
-      tags, category, readTime, metaTitle, metaDescription, focusKeyword, canonicalUrl, noIndex } = req.body;
+      tags, category, readTime, metaTitle, metaDescription, focusKeyword, canonicalUrl, noIndex, faq } = req.body;
     const createdBy = req.user?.userId;
     const blog = await Blog.create({
       title, excerpt, content, imageUrl, ogImage, author, authorAvatar, published, featured,
       tags: Array.isArray(tags) ? tags : (tags ? tags.split(',').map(t => t.trim()) : []),
-      category, readTime, metaTitle, metaDescription, focusKeyword, canonicalUrl, noIndex, createdBy
+      category, readTime, metaTitle, metaDescription, focusKeyword, canonicalUrl, noIndex, createdBy, faq
     });
     res.status(201).json({ success: true, blog });
   } catch (err) {

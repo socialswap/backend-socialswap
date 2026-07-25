@@ -34,6 +34,8 @@ const { getChatThread, getAllThreads, getThreadById, getThreadByUserId, uploadCh
 const { createDeal, updateDealStatus, getAllDeals, getUserDeals, updateDealPaymentStatus } = require('../controllers/dealController');
 const { getAllServices, getServiceBySlug, getAdminServices, createService, updateService, deleteService } = require('../controllers/serviceController');
 const { subscribe, unsubscribe } = require('../controllers/pushController');
+const { sendContactEmail } = require('../controllers/contactController');
+const { getTestimonials, createTestimonial, updateTestimonial, deleteTestimonial, uploadTestimonialImage, deleteTestimonialImage } = require('../controllers/testimonialController');
 
 const uploadFields = upload.fields([
   { name: 'banner', maxCount: 1 },
@@ -145,6 +147,9 @@ router.get('/deals', auth, getUserDeals);
 router.get('/services', getAllServices);
 router.get('/services/:slug', getServiceBySlug);
 
+// Contact Form
+router.post('/contact', sendContactEmail);
+
 // Services — admin
 router.get('/admin/services', auth, getAdminServices);
 router.post('/admin/services', auth, upload.array('images', 8), createService);
@@ -154,5 +159,14 @@ router.delete('/admin/services/:id', auth, deleteService);
 // Push Notifications
 router.post('/push/subscribe', auth, subscribe);
 router.post('/push/unsubscribe', auth, unsubscribe);
+
+// Testimonials
+router.get('/testimonials', cache(3600), getTestimonials); // 1 hour cache for public
+router.get('/admin/testimonials', auth, getTestimonials); // No cache for admin
+router.post('/admin/testimonials', auth, createTestimonial);
+router.put('/admin/testimonials/:id', auth, updateTestimonial);
+router.delete('/admin/testimonials/:id', auth, deleteTestimonial);
+router.post('/admin/testimonials/upload-image', auth, upload.single('image'), uploadTestimonialImage);
+router.delete('/admin/testimonials/delete-image', auth, deleteTestimonialImage);
 
 module.exports = router;

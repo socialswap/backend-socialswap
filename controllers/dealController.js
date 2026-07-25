@@ -11,6 +11,11 @@ exports.createDeal = async (req, res) => {
 
     const channel = await Channel.findById(channelId);
     if (!channel) return res.status(404).json({ success: false, message: 'Channel not found' });
+    
+    // Prevent creating a deal for a channel that is already sold
+    if (channel.sold || (channel.status && channel.status.toLowerCase() === 'sold')) {
+      return res.status(400).json({ success: false, message: 'Cannot create a deal for a channel that is already sold.' });
+    }
 
     const adminId = req.user.userId || req.user._id;
 

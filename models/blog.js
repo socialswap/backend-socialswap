@@ -30,6 +30,10 @@ const blogSchema = new mongoose.Schema({
   focusKeyword: { type: String, trim: true },
   canonicalUrl: { type: String, trim: true },
   noIndex: { type: Boolean, default: false },
+  faq: [{
+    question: { type: String, trim: true },
+    answer: { type: String, trim: true }
+  }],
   // Relations
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   viewCount: { type: Number, default: 0 },

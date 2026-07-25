@@ -145,18 +145,12 @@ app.get('/robots.txt', (req, res) => {
   res.set('Content-Type', 'text/plain');
   res.send(`User-agent: *
 Allow: /
-Disallow: /admin-dashboard
 Disallow: /admin/
-Disallow: /profile
-Disallow: /cart
-Disallow: /orders
-Disallow: /upload-channel
+Disallow: /user/
 Disallow: /edit-channel/
-Disallow: /payment-gateway/
-Disallow: /chat
 Disallow: /confirmation/
-Disallow: /login
-Disallow: /signup
+Disallow: /payment/
+Disallow: /unauthorized
 
 Sitemap: https://www.socialswap.in/sitemap.xml`);
 });

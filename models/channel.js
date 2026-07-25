@@ -1,22 +1,5 @@
 const mongoose = require('mongoose');
 
-const CATEGORY_OPTIONS = [
-  'Gaming',
-  'Tech',
-  'Finance',
-  'Artificial intelligence',
-  'Business & Entrepreneurship',
-  'Education',
-  'Health & Fitness',
-  'Food',
-  'Infotainment',
-  'Vlogging',
-  'Sports',
-  'Commentary',
-  'Entertainment',
-  'Music',
-  'Motivation & Self-Improvement'
-];
 
 const channelSchema = new mongoose.Schema({
   // Who created/listed this channel (reference to User)
@@ -100,7 +83,6 @@ const channelSchema = new mongoose.Schema({
   category: {
     type: String,
     required: true,
-    enum: CATEGORY_OPTIONS
   },
   channelType: {
     type: String,

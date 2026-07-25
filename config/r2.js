@@ -27,6 +27,7 @@ const getS3Client = () => {
         accessKeyId: accessKeyId,
         secretAccessKey: secretAccessKey,
       },
+      forcePathStyle: true,
     });
   }
   return s3ClientInstance;

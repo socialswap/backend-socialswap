@@ -1,5 +1,6 @@
 const Blog = require('../models/blog');
 const Channel = require('../models/channel');
+const Service = require('../models/service');
 
 const BASE_URL = 'https://www.socialswap.in';
 
@@ -7,9 +8,17 @@ const staticPages = [
   { loc: '/', priority: '1.0', changefreq: 'daily' },
   { loc: '/channels', priority: '0.9', changefreq: 'hourly' },
   { loc: '/blogs', priority: '0.8', changefreq: 'daily' },
+  { loc: '/services', priority: '0.8', changefreq: 'monthly' },
   { loc: '/about', priority: '0.6', changefreq: 'monthly' },
   { loc: '/grow', priority: '0.6', changefreq: 'monthly' },
   { loc: '/how-to', priority: '0.7', changefreq: 'monthly' },
+  { loc: '/feature', priority: '0.6', changefreq: 'monthly' },
+  { loc: '/stats', priority: '0.6', changefreq: 'monthly' },
+  { loc: '/privacy-policy', priority: '0.3', changefreq: 'yearly' },
+  { loc: '/terms-and-conditions', priority: '0.3', changefreq: 'yearly' },
+  { loc: '/refund-policy', priority: '0.3', changefreq: 'yearly' },
+  { loc: '/shipping-policy', priority: '0.3', changefreq: 'yearly' },
+  { loc: '/privacy', priority: '0.3', changefreq: 'yearly' },
 ];
 
 function escapeXml(str) {
@@ -19,9 +28,10 @@ function escapeXml(str) {
 
 exports.getSitemap = async (req, res) => {
   try {
-    const [blogs, channels] = await Promise.all([
-      Blog.find({ published: true }).select('slug updatedAt').lean(),
-      Channel.find({ status: 'Available', sold: false }).select('customUrl updatedAt').lean()
+    const [blogs, channels, services] = await Promise.all([
+      Blog.find({ published: true, noIndex: { $ne: true } }).select('slug updatedAt').lean(),
+      Channel.find({ status: 'Available', sold: false, noIndex: { $ne: true } }).select('customUrl updatedAt').lean(),
+      Service.find({ isActive: true }).select('slug updatedAt').lean()
     ]);
 
     let xml = `<?xml version="1.0" encoding="UTF-8"?>`;
@@ -55,6 +65,17 @@ exports.getSitemap = async (req, res) => {
       xml += `<lastmod>${new Date(channel.updatedAt).toISOString()}</lastmod>`;
       xml += `<changefreq>daily</changefreq>`;
       xml += `<priority>0.8</priority>`;
+      xml += `</url>`;
+    });
+
+    // Service pages
+    services.forEach(service => {
+      if (!service.slug) return;
+      xml += `<url>`;
+      xml += `<loc>${BASE_URL}/services/${escapeXml(service.slug)}</loc>`;
+      xml += `<lastmod>${new Date(service.updatedAt).toISOString()}</lastmod>`;
+      xml += `<changefreq>monthly</changefreq>`;
+      xml += `<priority>0.7</priority>`;
       xml += `</url>`;
     });
 
