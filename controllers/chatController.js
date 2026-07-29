@@ -115,3 +115,38 @@ exports.uploadChatImage = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
+// Get global unread message count for a user or admin
+exports.getUnreadCount = async (req, res) => {
+  try {
+    const userId = req.user.userId || req.user._id;
+    const user = await User.findById(userId);
+    let unreadCount = 0;
+
+    if (user.role === 'admin') {
+      // For admin: count unread messages from any normal user
+      // Assuming normal users aren't admins, we can just find messages where sender is not an admin, or just read: false and not sent by current admin
+      // Actually it's easier to find messages with read: false and sender not equal to this admin
+      const adminUsers = await User.find({ role: 'admin' }).select('_id');
+      const adminIds = adminUsers.map(a => a._id);
+      unreadCount = await Message.countDocuments({
+        read: false,
+        sender: { $nin: adminIds }
+      });
+    } else {
+      // For user: count unread messages in their thread sent by admin
+      const conversation = await Conversation.findOne({ participants: userId });
+      if (conversation) {
+        unreadCount = await Message.countDocuments({
+          conversationId: conversation._id,
+          read: false,
+          sender: { $ne: userId }
+        });
+      }
+    }
+
+    res.status(200).json({ success: true, unreadCount });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};

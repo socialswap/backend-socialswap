@@ -24,18 +24,19 @@ const { login } = require('../controllers/login');
 const { googleLogin } = require('../controllers/googleAuth');
 const { sendEmailOtp, verifyEmailOtp } = require('../controllers/emailOtpAuth');
 const { getCart, addToCart, removeFromCart, updateCartItem, clearCart } = require('../controllers/cart');
-const {getUserProfile,updateUserProfile, updateUserRole, deleteUser, getUser, getAllUsers, changePassword, adminUpdateUser, uploadAvatar} = require('../controllers/profile')
+const {getUserProfile,updateUserProfile, updateUserRole, deleteUser, getUser, getAllUsers, changePassword, adminUpdateUser, uploadAvatar, checkUsernameAvailability, getPublicUserProfile} = require('../controllers/profile')
 const multer = require('multer');
 const { upload, createChannel } = require('../middleware/multer');
 const { createBlog, updateBlog, deleteBlog, getBlogs, getAllBlogs, getBlog, incrementBlogViews, uploadBlogImage, deleteBlogImage } = require('../controllers/blogs');
 const { getSitemap } = require('../controllers/sitemapController');
 const { getChannelInfo } = require('../controllers/youtubeController');
-const { getChatThread, getAllThreads, getThreadById, getThreadByUserId, uploadChatImage } = require('../controllers/chatController');
+const { getChatThread, getAllThreads, getThreadById, getThreadByUserId, uploadChatImage, getUnreadCount } = require('../controllers/chatController');
 const { createDeal, updateDealStatus, getAllDeals, getUserDeals, updateDealPaymentStatus } = require('../controllers/dealController');
 const { getAllServices, getServiceBySlug, getAdminServices, createService, updateService, deleteService } = require('../controllers/serviceController');
 const { subscribe, unsubscribe } = require('../controllers/pushController');
 const { sendContactEmail } = require('../controllers/contactController');
 const { getTestimonials, createTestimonial, updateTestimonial, deleteTestimonial, uploadTestimonialImage, deleteTestimonialImage } = require('../controllers/testimonialController');
+const { getHomeVideo, updateHomeVideo } = require('../controllers/homeVideoController');
 
 const uploadFields = upload.fields([
   { name: 'banner', maxCount: 1 },
@@ -104,6 +105,8 @@ router.get('/profile', auth, getUserProfile);
 router.put('/profile', auth, updateUserProfile);
 router.post('/profile/avatar', auth, upload.single('avatar'), uploadAvatar);
 router.put('/changePassword', auth, changePassword);
+router.get('/profile/check-username/:username', auth, checkUsernameAvailability);
+router.get('/users/profile/:username', getPublicUserProfile);
 
 router.get('/users', auth, getAllUsers);
 router.get('/users/:userId', auth, getUser);
@@ -131,6 +134,7 @@ router.get('/youtube/channel-info', auth, getChannelInfo);
 
 // Chat
 router.get('/chat', auth, getChatThread);
+router.get('/chat/unread', auth, getUnreadCount); // Unread count
 router.post('/chat/upload', auth, upload.single('image'), uploadChatImage);
 router.get('/admin/chats', auth, getAllThreads);
 router.get('/admin/chats/:threadId', auth, getThreadById);
@@ -168,5 +172,9 @@ router.put('/admin/testimonials/:id', auth, updateTestimonial);
 router.delete('/admin/testimonials/:id', auth, deleteTestimonial);
 router.post('/admin/testimonials/upload-image', auth, upload.single('image'), uploadTestimonialImage);
 router.delete('/admin/testimonials/delete-image', auth, deleteTestimonialImage);
+
+// Home Video
+router.get('/home-video', getHomeVideo);
+router.put('/admin/home-video', auth, updateHomeVideo);
 
 module.exports = router;

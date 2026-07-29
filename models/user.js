@@ -12,6 +12,13 @@ const UserSchema = new mongoose.Schema({
     required: true,
     unique: true  
   },
+  username: {
+    type: String,
+    unique: true,
+    sparse: true,
+    trim: true,
+    lowercase: true
+  },
   password: {
     type: String,
     // Password not required for OAuth or OTP-only users
@@ -53,6 +60,10 @@ const UserSchema = new mongoose.Schema({
     enum: ['active', 'suspended', 'disabled', 'deleted'],
     default: 'active',
     required: true
+  },
+  welcomeEmailSent: {
+    type: Boolean,
+    default: false
   }
 });
 

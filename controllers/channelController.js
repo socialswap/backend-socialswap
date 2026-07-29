@@ -223,7 +223,7 @@ exports.getChannels = async (req, res) => {
 // Get a single channel by MongoDB _id
 exports.getChannel = async (req, res) => {
   try {
-    const channel = await YouTubeChannel.findById(req.params.id).populate('createdBy', 'name email avatar');
+    const channel = await YouTubeChannel.findById(req.params.id).populate('createdBy', 'name email avatar username');
     if (channel == null) {
       return res.status(404).json({ message: 'Channel not found' });
     }
@@ -238,9 +238,9 @@ exports.getChannelByUsername = async (req, res) => {
   try {
     const { username } = req.params;
     // Try customUrl first (exact match), then fallback to _id
-    let channel = await YouTubeChannel.findOne({ customUrl: username }).populate('createdBy', 'name email avatar');
+    let channel = await YouTubeChannel.findOne({ customUrl: username }).populate('createdBy', 'name email avatar username');
     if (!channel && username.match(/^[0-9a-fA-F]{24}$/)) {
-      channel = await YouTubeChannel.findById(username).populate('createdBy', 'name email avatar');
+      channel = await YouTubeChannel.findById(username).populate('createdBy', 'name email avatar username');
     }
     if (!channel) {
       return res.status(404).json({ message: 'Channel not found' });

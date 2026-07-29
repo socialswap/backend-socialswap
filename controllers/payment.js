@@ -5,6 +5,8 @@ const Transaction = require('../models/payment');
 const auth = require('../middleware/auth');
 const YouTubeChannel = require('../models/channel');
 const EscrowDeal = require('../models/deal');
+const User = require('../models/user');
+const { sendMailWithLogo } = require('../utils/mailer');
 const { StandardCheckoutClient, Env, StandardCheckoutPayRequest } = require('@phonepe-pg/pg-sdk-node');
 
 // Configuration object for PhonePe V2 integration
@@ -99,7 +101,7 @@ const createPaymentOrder = async (req, res) => {
 
     // Update transaction with PhonePe response
     await transaction.updateOne({
-      phonepeResponse: response,
+      phonepeResponse: JSON.parse(JSON.stringify(response)),
       status: 'INITIATED',
       updatedAt: new Date()
     });
@@ -187,15 +189,19 @@ const checkPaymentStatus = async (req, res) => {
       mappedStatus = 'FAILED';
     }
 
+    const wasAlreadySuccess = transaction.status === 'SUCCESS';
+
     // Save the status
     transaction.status = mappedStatus;
     transaction.updatedAt = new Date();
     
     // Merge the new response with the old one (if needed) or replace it
+    const plainResponse = JSON.parse(JSON.stringify(response));
     transaction.phonepeResponse = {
       ...transaction.phonepeResponse,
-      statusResponse: response
+      statusResponse: plainResponse
     };
+    transaction.markModified('phonepeResponse');
 
     await transaction.save();
 
@@ -225,6 +231,34 @@ const checkPaymentStatus = async (req, res) => {
         );
       } catch (err) {
         console.error('Failed to update channel status:', err);
+      }
+    }
+
+    if (mappedStatus === 'SUCCESS' && !wasAlreadySuccess) {
+      try {
+        const user = await User.findById(transaction.user);
+        if (user && user.email) {
+          const emailHtml = `
+            <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+              <div style="text-align: center; margin-bottom: 20px;">
+                <img src="cid:socialswap-logo" alt="SocialSwap Logo" style="max-height: 80px;" />
+              </div>
+              <h2 style="color: #10B981; text-align: center;">Payment Successful!</h2>
+              <p>Hi ${user.name || 'there'},</p>
+              <p>We've successfully received your payment of <strong>₹${transaction.amount}</strong> for your recent transaction.</p>
+              <p><strong>Transaction ID:</strong> ${transaction.transactionId}</p>
+              <p>Your escrow deal or channel purchase is now confirmed. You can view the details in your profile.</p>
+              <div style="text-align: center; margin: 30px 0;">
+                <a href="https://www.socialswap.in/user/profile" style="background-color: #7C3AED; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">Go to Profile</a>
+              </div>
+              <p>Thank you for using SocialSwap!</p>
+              <p>Best regards,<br>The SocialSwap Team</p>
+            </div>
+          `;
+          sendMailWithLogo(user.email, 'Payment Successful - SocialSwap', emailHtml).catch(err => console.error('Payment email failed:', err));
+        }
+      } catch (err) {
+        console.error('Failed to send payment email:', err);
       }
     }
 
@@ -266,7 +300,7 @@ const getTransactions = async (req, res) => {
   try {
     const currentUser = req.user;
 
-    const transactions = await Transaction.find({ 'user.userId': currentUser.userId })
+    const transactions = await Transaction.find({ user: currentUser.userId })
       .sort({ createdAt: -1 })
       .select('-phonepeResponse.paymentInstrument');
 
@@ -303,7 +337,7 @@ const getTransactionById = async (req, res) => {
 
     const transaction = await Transaction.findOne({
       transactionId,
-      'user.userId': currentUser.userId
+      user: currentUser.userId
     }).select('-phonepeResponse.paymentInstrument');
 
     if (!transaction) {

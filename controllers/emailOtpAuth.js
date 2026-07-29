@@ -1,27 +1,8 @@
-const jwt = require('jsonwebtoken');
-const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
-const nodemailer = require('nodemailer');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const { transporter, sendMailWithLogo } = require('../utils/mailer');
 const User = require('../models/user');
-
-const transporter = (() => {
-  const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_SECURE } = process.env;
-
-  if (!SMTP_HOST || !SMTP_PORT || !SMTP_USER || !SMTP_PASS) {
-    console.warn('Email OTP: SMTP configuration is incomplete. OTP emails cannot be sent until all SMTP environment variables are set.');
-    return null;
-  }
-
-  return nodemailer.createTransport({
-    host: SMTP_HOST,
-    port: Number(SMTP_PORT),
-    secure: SMTP_SECURE ? SMTP_SECURE === 'true' : Number(SMTP_PORT) === 465,
-    auth: {
-      user: SMTP_USER,
-      pass: SMTP_PASS
-    }
-  });
-})();
 
 const generateOtp = () => Math.floor(100000 + Math.random() * 900000).toString();
 
@@ -164,7 +145,35 @@ exports.verifyEmailOtp = async (req, res) => {
     user.emailOtpHash = undefined;
     user.emailOtpExpires = undefined;
     user.authProvider = user.authProvider || 'email-otp';
+
+    let isFirstLogin = false;
+    if (!user.welcomeEmailSent) {
+      user.welcomeEmailSent = true;
+      isFirstLogin = true;
+    }
+
     await user.save();
+
+    if (isFirstLogin) {
+      const welcomeHtml = `
+        <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="text-align: center; margin-bottom: 20px;">
+            <img src="cid:socialswap-logo" alt="SocialSwap Logo" style="max-height: 80px;" />
+          </div>
+          <h2 style="color: #7C3AED; text-align: center;">Welcome to SocialSwap!</h2>
+          <p>Hi ${user.name || 'there'},</p>
+          <p>Welcome to <strong>SocialSwap</strong>! We're thrilled to have you on board.</p>
+          <p>SocialSwap is your trusted platform to buy and sell digital channels safely. Explore top deals, chat with sellers, and use our secure escrow system for a seamless experience.</p>
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="https://www.socialswap.in" style="background-color: #7C3AED; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">Explore SocialSwap</a>
+          </div>
+          <p>If you have any questions, feel free to reach out to our support team.</p>
+          <p>Best regards,<br>The SocialSwap Team</p>
+        </div>
+      `;
+      // Send welcome email asynchronously without blocking the response
+      sendMailWithLogo(user.email, 'Welcome to SocialSwap! 🎉', welcomeHtml).catch(err => console.error('Welcome email failed:', err));
+    }
 
     const token = jwt.sign(
       { userId: user._id, email: user.email, role: user.role },

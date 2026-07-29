@@ -248,13 +248,15 @@ io.on('connection', (socket) => {
             });
             
             for (let sub of subscriptions) {
-              webpush.sendNotification(sub, payload).catch(err => {
+              const pushSub = { endpoint: sub.endpoint, keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth } };
+              webpush.sendNotification(pushSub, payload).catch(err => {
+                console.error('Webpush to admin error:', err.statusCode, err.body || err);
                 if (err.statusCode === 410) {
                   PushSubscription.deleteOne({ _id: sub._id }).exec();
                 }
               });
             }
-          } catch(err) { console.error('Push error:', err); }
+          } catch(err) { console.error('Push error (admin loop):', err); }
 
         } else {
           const otherParticipant = thread.participants.find(p => p.toString() !== sender.toString());
@@ -271,13 +273,15 @@ io.on('connection', (socket) => {
               });
               
               for (let sub of subscriptions) {
-                webpush.sendNotification(sub, payload).catch(err => {
+                const pushSub = { endpoint: sub.endpoint, keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth } };
+                webpush.sendNotification(pushSub, payload).catch(err => {
+                  console.error('Webpush to user error:', err.statusCode, err.body || err);
                   if (err.statusCode === 410) {
                     PushSubscription.deleteOne({ _id: sub._id }).exec();
                   }
                 });
               }
-            } catch(err) { console.error('Push error:', err); }
+            } catch(err) { console.error('Push error (user loop):', err); }
           }
         }
       }

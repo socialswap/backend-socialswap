@@ -52,7 +52,7 @@ exports.uploadAvatar = async (req, res) => {
 
 exports.updateUserProfile = async (req, res) => {
   try {
-    const { name, email, password, role, currentPassword, mobile } = req.body;
+    const { name, email, password, role, currentPassword, mobile, username } = req.body;
     const user = await User.findById(req.user.userId);
 
     if (!user) {
@@ -73,6 +73,24 @@ exports.updateUserProfile = async (req, res) => {
       // Hash the new password
       const salt = await bcrypt.genSalt(10);
       user.password = await bcrypt.hash(password, salt);
+    }
+
+    // Update username if provided
+    if (username !== undefined) {
+      if (username === '') {
+        user.username = undefined;
+      } else {
+        const cleanUsername = username.replace(/^@/, '').toLowerCase().trim();
+        const usernameRegex = /^[a-zA-Z0-9_]{3,20}$/;
+        if (!usernameRegex.test(cleanUsername)) {
+          return res.status(400).json({ message: 'Username must be between 3 and 20 characters and contain only letters, numbers, or underscores' });
+        }
+        const existingUser = await User.findOne({ username: cleanUsername, _id: { $ne: req.user.userId } });
+        if (existingUser) {
+          return res.status(400).json({ message: 'Username is already taken' });
+        }
+        user.username = cleanUsername;
+      }
     }
 
     // Update other fields if provided
@@ -237,6 +255,51 @@ exports.deleteUser = async (req, res) => {
     res.json({ message: 'User deleted successfully' });
   } catch (error) {
     console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// Check username availability
+exports.checkUsernameAvailability = async (req, res) => {
+  try {
+    const { username } = req.params;
+    const cleanUsername = username.replace(/^@/, '').toLowerCase().trim();
+    const usernameRegex = /^[a-zA-Z0-9_]{3,20}$/;
+    if (!usernameRegex.test(cleanUsername)) {
+      return res.status(400).json({ message: 'Username must be between 3 and 20 characters and contain only letters, numbers, or underscores' });
+    }
+    const existingUser = await User.findOne({ username: cleanUsername });
+    res.json({ available: !existingUser });
+  } catch (error) {
+    console.error('Error checking username:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// Get public user profile (avatar, name, username, and unsold channels)
+exports.getPublicUserProfile = async (req, res) => {
+  try {
+    const { username } = req.params;
+    const cleanUsername = username.replace(/^@/, '').toLowerCase().trim();
+    
+    const user = await User.findOne({ username: cleanUsername }).select('name username avatar role status createdAt');
+    if (!user || user.status !== 'active') {
+      return res.status(404).json({ message: 'User profile not found' });
+    }
+
+    const Channel = require('../models/channel');
+    const channels = await Channel.find({
+      $or: [
+        { createdBy: user._id },
+        { seller: user._id.toString() }
+      ],
+      sold: { $ne: true },
+      status: { $in: ['Available', 'approved'] }
+    }).select('-contactInfo'); // Exclude email and phone as requested
+
+    res.json({ user, channels });
+  } catch (error) {
+    console.error('Error fetching public user profile:', error);
     res.status(500).json({ message: 'Server error' });
   }
 };
