@@ -75,8 +75,8 @@ exports.sendContactEmail = async (req, res) => {
         </div>
       `,
       attachments: [{
-        filename: 'logo.png',
-        path: path.join(__dirname, '../logo.png'),
+        filename: 'logo.webp',
+        path: path.join(__dirname, '../logo.webp'),
         cid: 'logo'
       }]
     };
@@ -120,8 +120,8 @@ exports.sendContactEmail = async (req, res) => {
         </div>
       `,
       attachments: [{
-        filename: 'logo.png',
-        path: path.join(__dirname, '../logo.png'),
+        filename: 'logo.webp',
+        path: path.join(__dirname, '../logo.webp'),
         cid: 'logo'
       }]
     };
