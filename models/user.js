@@ -12,6 +12,13 @@ const UserSchema = new mongoose.Schema({
     required: true,
     unique: true  
   },
+  username: {
+    type: String,
+    unique: true,
+    sparse: true,
+    trim: true,
+    lowercase: true
+  },
   password: {
     type: String,
     // Password not required for OAuth or OTP-only users
@@ -47,8 +54,17 @@ const UserSchema = new mongoose.Schema({
   emailOtpExpires: {
     type: Date,
     select: false
+  },
+  status: {
+    type: String,
+    enum: ['active', 'suspended', 'disabled', 'deleted'],
+    default: 'active',
+    required: true
+  },
+  welcomeEmailSent: {
+    type: Boolean,
+    default: false
   }
-  // ... other fields
 });
 
 module.exports = mongoose.model('User', UserSchema);

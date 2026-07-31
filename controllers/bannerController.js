@@ -1,33 +1,5 @@
 const Banner = require('../models/banner');
-const axios = require('axios');
-
-const IMGBB_API_KEY = '338c0d8da9a3175d9b6e43e47959c3dc';
-const IMGBB_UPLOAD_URL = 'https://api.imgbb.com/1/upload';
-
-// Upload image to ImgBB
-const uploadToImgBB = async (fileBuffer) => {
-  try {
-    // Create URL-encoded form data
-    const formData = new URLSearchParams();
-    formData.append('key', IMGBB_API_KEY);
-    formData.append('image', fileBuffer.toString('base64'));
-
-    const response = await axios.post(IMGBB_UPLOAD_URL, formData, {
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
-      }
-    });
-
-    if (response.data.success) {
-      return response.data.data.url;
-    } else {
-      throw new Error('ImgBB upload failed');
-    }
-  } catch (error) {
-    console.error('ImgBB upload error details:', error.response?.data || error.message);
-    throw new Error('Failed to upload to ImgBB: ' + error.message);
-  }
-};
+const { uploadToR2, deleteFromR2 } = require('../config/r2');
 
 // Get all banners (public)
 exports.getAllBanners = async (req, res) => {
@@ -101,9 +73,9 @@ exports.createBanner = async (req, res) => {
       });
     }
 
-    // Upload images to ImgBB
-    const desktopImageUrl = await uploadToImgBB(files.desktopImage[0].buffer);
-    const mobileImageUrl = await uploadToImgBB(files.mobileImage[0].buffer);
+    // Upload images to R2
+    const desktopImageUrl = await uploadToR2(files.desktopImage[0].buffer, files.desktopImage[0].originalname, files.desktopImage[0].mimetype);
+    const mobileImageUrl = await uploadToR2(files.mobileImage[0].buffer, files.mobileImage[0].originalname, files.mobileImage[0].mimetype);
 
     // Create banner
     const banner = await Banner.create({
@@ -163,14 +135,20 @@ exports.updateBanner = async (req, res) => {
     if (isActive !== undefined) banner.isActive = isActive;
 
     // Upload new images if provided
-    if (files && files.desktopImage) {
-      banner.desktopImageUrl = await uploadToImgBB(files.desktopImage[0].buffer);
+    if (files) {
+      if (files.desktopImage && files.desktopImage[0]) {
+        if (banner.desktopImageUrl) {
+          await deleteFromR2(banner.desktopImageUrl);
+        }
+        banner.desktopImageUrl = await uploadToR2(files.desktopImage[0].buffer, files.desktopImage[0].originalname, files.desktopImage[0].mimetype);
+      }
+      if (files.mobileImage && files.mobileImage[0]) {
+        if (banner.mobileImageUrl) {
+          await deleteFromR2(banner.mobileImageUrl);
+        }
+        banner.mobileImageUrl = await uploadToR2(files.mobileImage[0].buffer, files.mobileImage[0].originalname, files.mobileImage[0].mimetype);
+      }
     }
-
-    if (files && files.mobileImage) {
-      banner.mobileImageUrl = await uploadToImgBB(files.mobileImage[0].buffer);
-    }
-
     await banner.save();
 
     res.status(200).json({
@@ -200,13 +178,23 @@ exports.deleteBanner = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const banner = await Banner.findByIdAndDelete(id);
+    const banner = await Banner.findById(id);
     if (!banner) {
       return res.status(404).json({
         success: false,
         message: 'Banner not found'
       });
     }
+
+    // Delete files from R2
+    if (banner.desktopImageUrl) {
+      await deleteFromR2(banner.desktopImageUrl);
+    }
+    if (banner.mobileImageUrl) {
+      await deleteFromR2(banner.mobileImageUrl);
+    }
+
+    await Banner.findByIdAndDelete(id);
 
     res.status(200).json({
       success: true,

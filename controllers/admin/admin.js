@@ -3,18 +3,16 @@ const router = express.Router();
 const Channel = require('../../models/channel');
 const Transaction = require('../../models/payment');
 const User = require('../../models/user');
-const auth = require('../../middleware/auth')
+const auth = require('../../middleware/auth');
+const { deleteFromR2 } = require('../../config/r2');
 
 // Get all transactions with user details
 router.get('/admin/transactions', auth, async (req, res) => {
-  console.log(req.user);
-  
   if (req?.user?.role !== "admin") {
     return res.status(401).json({ message: "invalid user" })
   }
   try {
-    // Add query parameters for filtering
-    const query = { status: 'SUCCESS' };
+    const query = {}; // Return all transactions (or query matching)
     const { status, paymentMethod, startDate, endDate } = req.query;
 
     // Apply filters if provided
@@ -29,19 +27,67 @@ router.get('/admin/transactions', auth, async (req, res) => {
 
     const transactions = await Transaction.find(query)
       .sort({ createdAt: -1 })
-      .lean()
-      .populate({
-        path: 'user',
-        model: User,
-        select: 'name email role mobile -_id'
-      })
-      .populate('orderDetails');
+      .lean();
+
+    // 1. Manually join User records (since Transaction.user is a String, not ObjectId)
+    const userIds = transactions.map(t => t.user).filter(Boolean);
+    const users = await User.find({ _id: { $in: userIds } })
+      .select('name email role mobile')
+      .lean();
+
+    // 2. Fetch Escrow Deals for transactions that bought deals (to show what channel was bought)
+    const EscrowDeal = require('../../models/deal');
+    const deals = await EscrowDeal.find({
+      _id: { $in: transactions.map(t => t.metadata?.dealId).filter(Boolean) }
+    }).populate({
+      path: 'channel',
+      model: Channel,
+      select: 'name price'
+    }).lean();
 
     const transformedTransactions = transactions.map(transaction => {
-      const userDetails = transaction.user || {
+      // Find manually matched user
+      const matchedUser = users.find(u => u._id.toString() === transaction.user);
+      const userDetails = matchedUser || {
         name: 'Unknown User',
         email: 'N/A',
-        role: 'N/A'
+        role: 'N/A',
+        mobile: 'N/A'
+      };
+
+      // Populate cart items if this is an Escrow Deal purchase
+      let cartItems = transaction.metadata?.cartItems || [];
+      if (cartItems.length === 0 && transaction.metadata?.dealId) {
+        const deal = deals.find(d => d._id.toString() === transaction.metadata.dealId.toString());
+        if (deal && deal.channel) {
+          cartItems = [{
+            id: deal.channel._id,
+            name: `Escrow Deal: ${deal.channel.name}`,
+            price: deal.dealPrice || transaction.amount,
+            quantity: 1
+          }];
+        }
+      }
+
+      // 3. Normalize PhonePe V2 Response properties for frontend compatibility
+      const ppe = transaction.phonepeResponse || {};
+      const statusRes = ppe.statusResponse || ppe;
+      
+      const normalizedPhonePe = {
+        ...ppe,
+        data: {
+          merchantId: statusRes.merchantId || ppe.merchantId || ppe.data?.merchantId || 'N/A',
+          transactionId: statusRes.merchantOrderId || statusRes.transactionId || ppe.transactionId || ppe.data?.transactionId || 'N/A',
+          state: statusRes.state || ppe.state || ppe.data?.state || 'N/A',
+          responseCode: statusRes.errorCode || statusRes.responseCode || ppe.responseCode || ppe.data?.responseCode || 'SUCCESS',
+          paymentInstrument: {
+            type: statusRes.paymentDetails?.[0]?.paymentMode || statusRes.paymentInstrument?.type || ppe.data?.paymentInstrument?.type || 'N/A',
+            utr: statusRes.paymentDetails?.[0]?.transactionId || statusRes.paymentInstrument?.utr || ppe.data?.paymentInstrument?.utr || 'N/A',
+            upiTransactionId: statusRes.paymentDetails?.[0]?.transactionId || statusRes.paymentInstrument?.upiTransactionId || ppe.data?.paymentInstrument?.upiTransactionId || 'N/A',
+            accountType: statusRes.paymentDetails?.[0]?.instrument?.type || ppe.data?.paymentInstrument?.accountType || 'N/A'
+          }
+        },
+        statusResponse: statusRes
       };
 
       return {
@@ -53,10 +99,12 @@ router.get('/admin/transactions', auth, async (req, res) => {
         paymentMethod: transaction.paymentMethod,
         createdAt: transaction.createdAt,
         updatedAt: transaction.updatedAt,
-        orderDetails: transaction.orderDetails,
         user: userDetails,
-        metadata: transaction.metadata,
-        phonepeResponse: transaction.phonepeResponse
+        metadata: {
+          ...transaction.metadata,
+          cartItems
+        },
+        phonepeResponse: normalizedPhonePe
       };
     });
 
@@ -155,7 +203,7 @@ router.delete('/admin/channels/:id', auth, async (req, res) => {
   try {
     const { id } = req.params;
 
-    const deletedChannel = await Channel.findByIdAndDelete(id);
+    const deletedChannel = await Channel.findById(id);
 
     if (!deletedChannel) {
       return res.status(404).json({
@@ -163,6 +211,16 @@ router.delete('/admin/channels/:id', auth, async (req, res) => {
         message: 'Channel not found'
       });
     }
+
+    // Delete files from R2
+    if (deletedChannel.bannerUrl) {
+      await deleteFromR2(deletedChannel.bannerUrl);
+    }
+    if (deletedChannel.imageUrls && deletedChannel.imageUrls.length > 0) {
+      await Promise.all(deletedChannel.imageUrls.map(url => deleteFromR2(url)));
+    }
+
+    await Channel.findByIdAndDelete(id);
 
     res.json({
       success: true,

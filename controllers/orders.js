@@ -18,20 +18,35 @@ const getOrderChannelDetails = async (req, res) => {
       });
     }
 
-    // Fetch orders from your existing orders collection
+    // 1. Fetch channels from regular cart Transactions
     const orders = await Transaction.find({
-      user: userId?.userId
+      user: userId?.userId,
+      status: 'SUCCESS' // Only successful transactions
     });
     
     // Extract channel IDs from cart items
-    const channelIds = orders.reduce((acc, order) => {
+    let channelIds = orders.reduce((acc, order) => {
         const ids = order?.metadata?.cartItems?.map(item => item.id) || [];
         return [...acc, ...ids];
       }, []);
 
-      const objectIds = channelIds.map(id => new mongoose.Types.ObjectId(id));
+    // 2. Fetch channels from Escrow Deals where user is buyer and payment is paid
+    const EscrowDeal = require('../models/deal');
+    const escrowDeals = await EscrowDeal.find({
+      buyer: userId?.userId,
+      payment: 'paid'
+    });
+    
+    // Add escrow channel IDs
+    const escrowChannelIds = escrowDeals.map(deal => deal.channel.toString());
+    channelIds = [...channelIds, ...escrowChannelIds];
+    
+    // Remove duplicates
+    channelIds = [...new Set(channelIds)];
 
-      // Fetch just the channels based on the IDs
+    const objectIds = channelIds.map(id => new mongoose.Types.ObjectId(id));
+
+    // Fetch just the channels based on the IDs
       const channels = await Channel.find({
         _id: { $in: objectIds }
       }).select({

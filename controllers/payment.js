@@ -1,58 +1,38 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
-const axios = require('axios');
-const crypto = require('crypto');
 const router = express.Router();
 const Transaction = require('../models/payment');
 const auth = require('../middleware/auth');
-const Channel = require('../models/channel');
-const { default: mongoose } = require('mongoose');
 const YouTubeChannel = require('../models/channel');
+const EscrowDeal = require('../models/deal');
+const User = require('../models/user');
+const { sendMailWithLogo } = require('../utils/mailer');
+const { StandardCheckoutClient, Env, StandardCheckoutPayRequest } = require('@phonepe-pg/pg-sdk-node');
 
-// Configuration object for PhonePe integration
+// Configuration object for PhonePe V2 integration
 const CONFIG = {
-  MERCHANT_ID: process.env.PHONEPE_MERCHANT_ID,
-  SALT_KEY: process.env.PHONEPE_SALT_KEY,
-  SALT_INDEX: process.env.PHONEPE_SALT_INDEX,
-  PHONEPE_HOST: process.env.PHONEPE_HOST,
+  CLIENT_ID: process.env.PHONEPE_MERCHANT_ID, // V2 uses Merchant ID as Client ID
+  CLIENT_SECRET: process.env.PHONEPE_SALT_KEY, // V2 uses Salt Key as Client Secret
+  CLIENT_VERSION: process.env.PHONEPE_CLIENT_VERSION || 1,
+  PHONEPE_ENV: process.env.PHONEPE_ENV === 'PRODUCTION' ? Env.PRODUCTION : Env.SANDBOX,
   REDIRECT_URL: process.env.REDIRECT_URL,
   CALLBACK_URL: process.env.PROD_CALLBACK_URL
 };
 
-/**
- * Generate signature for PhonePe API requests
- * @param {Object} payload - Payment payload
- * @param {string} saltKey - Merchant salt key
- * @param {number} saltIndex - Salt index
- * @returns {Object} Base64 payload and signature
- */
-const generateSignature = (payload, saltKey, saltIndex) => {
-  try {
-    const payloadBase64 = Buffer.from(JSON.stringify(payload)).toString('base64');
-    const concatenatedString = payloadBase64 + '/pg/v1/pay' + saltKey;
-    const signature = crypto
-      .createHash('sha256')
-      .update(concatenatedString)
-      .digest('hex') + '###' + saltIndex;
-
-    return {
-      payload: payloadBase64,
-      signature,
-    };
-  } catch (error) {
-    console.error('Signature generation failed:', error);
-    throw new Error('Failed to generate signature');
-  }
-};
+// Initialize PhonePe SDK Client
+const phonepeClient = StandardCheckoutClient.getInstance(
+  CONFIG.CLIENT_ID,
+  CONFIG.CLIENT_SECRET,
+  CONFIG.CLIENT_VERSION,
+  CONFIG.PHONEPE_ENV
+);
 
 /**
- * Create a payment order with PhonePe
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
+ * Create a payment order with PhonePe V2
  */
 const createPaymentOrder = async (req, res) => {
   try {
-    const { amount, cartItems } = req.body;
+    const { amount, cartItems, dealId } = req.body;
     const currentUser = req.user;
 
     if (!amount || amount <= 0) {
@@ -62,24 +42,24 @@ const createPaymentOrder = async (req, res) => {
       });
     }
 
-    // Check if any channels are already sold
-    const soldChannels = await Promise.all(
-      cartItems.map(async (item) => {
-        console.log(item);
-        const channel = await YouTubeChannel.findById(item?.id);
-        
-        if (channel && channel.status === 'Sold') {
-          return {
-            channelId: channel._id,
-            name: channel.name
-          };
-        }
-        return null;
-      })
-    );
-
-    // Filter out null values and get list of sold channels
-    const actualSoldChannels = soldChannels.filter(channel => channel !== null);
+    // Check if any channels are already sold (only if cartItems exists)
+    let actualSoldChannels = [];
+    if (cartItems && cartItems.length > 0) {
+      const soldChannels = await Promise.all(
+        cartItems.map(async (item) => {
+          const channel = await YouTubeChannel.findById(item?.id);
+          
+          if (channel && channel.status === 'Sold') {
+            return {
+              channelId: channel._id,
+              name: channel.name
+            };
+          }
+          return null;
+        })
+      );
+      actualSoldChannels = soldChannels.filter(channel => channel !== null);
+    }
 
     // If any channels are sold, return error with details
     if (actualSoldChannels.length > 0) {
@@ -93,20 +73,6 @@ const createPaymentOrder = async (req, res) => {
 
     const transactionId = `MT${Date.now()}${Math.random().toString(36).slice(2, 8)}`;
     
-    const payload = {
-      merchantId: CONFIG.MERCHANT_ID,
-      merchantTransactionId: transactionId,
-      merchantUserId: currentUser?.userId || uuidv4(),
-      amount: Math.round(amount * 100), // Convert to lowest currency unit
-      redirectUrl: `${CONFIG.REDIRECT_URL}/confirmation/${transactionId}`,
-      redirectMode: 'REDIRECT_URL',
-      callbackUrl: CONFIG.CALLBACK_URL,
-      mobileNumber: currentUser?.phone,
-      paymentInstrument: {
-        type: 'PAY_PAGE'
-      }
-    };
-
     // Create initial transaction record with validated cart items
     const transaction = await Transaction.createTransaction({
       transactionId,
@@ -115,42 +81,45 @@ const createPaymentOrder = async (req, res) => {
       amount,
       metadata: {
         cartItems: cartItems || [],
+        dealId: dealId || null,
         initiatedAt: new Date(),
-        validatedAt: new Date() // Add validation timestamp
+        validatedAt: new Date()
       }
     });
 
-    const { payload: base64Payload, signature } = generateSignature(
-      payload,
-      CONFIG.SALT_KEY,
-      CONFIG.SALT_INDEX
-    );
+    const redirectUrl = `${CONFIG.REDIRECT_URL}/confirmation/${transactionId}`;
 
-    // Make request to PhonePe
-    const response = await axios.post(
-      `${CONFIG.PHONEPE_HOST}/pg/v1/pay`,
-      { request: base64Payload },
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          'X-VERIFY': signature,
-          'Accept': 'application/json'
-        },
-      }
-    );
+    // Build the request using the PhonePe V2 SDK
+    const request = StandardCheckoutPayRequest.builder()
+      .merchantOrderId(transactionId)
+      .amount(Math.round(amount * 100)) // Convert to paisa
+      .redirectUrl(redirectUrl)
+      .build();
+
+    // Make request to PhonePe via SDK
+    const response = await phonepeClient.pay(request);
 
     // Update transaction with PhonePe response
     await transaction.updateOne({
-      phonepeResponse: response.data,
+      phonepeResponse: JSON.parse(JSON.stringify(response)),
       status: 'INITIATED',
       updatedAt: new Date()
     });
 
+    // We structure the response to maintain backward compatibility with the frontend
+    // The frontend expects: data.data.instrumentResponse.redirectInfo.url
     return res.status(200).json({
       success: true,
       data: {
         transactionId,
-        ...response.data
+        data: {
+          instrumentResponse: {
+            redirectInfo: {
+              url: response.redirectUrl
+            }
+          }
+        },
+        ...response
       }
     });
 
@@ -164,7 +133,6 @@ const createPaymentOrder = async (req, res) => {
       error: error.response?.data?.message || error.message
     };
 
-    // Add more context if it's a database error
     if (error.name === 'MongoError' || error.name === 'ValidationError') {
       errorResponse.code = 'DATABASE_ERROR';
     }
@@ -175,16 +143,10 @@ const createPaymentOrder = async (req, res) => {
 
 
 /**
- * Check payment status with retry mechanism
- * @param {string} transactionId - Transaction ID to check
- * @param {number} retryCount - Number of retry attempts
- * @param {number} delay - Delay between retries in milliseconds
- * @returns {Promise<Object>} Payment status
+ * Check payment status with PhonePe V2 SDK
  */
 const checkPaymentStatus = async (req, res) => {
   const { transactionId } = req.params;
-  const retryCount = 3;
-  const delayMs = 2000;
 
   try {
     // Find transaction in database first
@@ -196,91 +158,132 @@ const checkPaymentStatus = async (req, res) => {
       });
     }
 
-    // Generate X-VERIFY header
-    const hashString = `/pg/v1/status/${CONFIG.MERCHANT_ID}/${transactionId}${CONFIG.SALT_KEY}`;
-    const hash = crypto.createHash('sha256').update(hashString).digest('hex');
-    const xVerify = `${hash}###${CONFIG.SALT_INDEX}`;
-
-    // Configure request
-    const config = {
-      method: 'get',
-      url: `${CONFIG.PHONEPE_HOST}/pg/v1/status/${CONFIG.MERCHANT_ID}/${transactionId}`,
-      headers: {
-        'Content-Type': 'application/json',
-        'X-VERIFY': xVerify,
-        'X-MERCHANT-ID': CONFIG.MERCHANT_ID
-      }
-    };
-
-    // Implement retry mechanism
-    let lastError;
-    for (let attempt = 1; attempt <= retryCount; attempt++) {
-      try {
-        const response = await axios(config);
-        const paymentStatus = response.data;
-
-        // Map PhonePe status to our transaction status
-        let transactionStatus;
-        switch (paymentStatus.code) {
-          case 'PAYMENT_SUCCESS':
-            transactionStatus = 'SUCCESS';
-            break;
-          case 'PAYMENT_PENDING':
-            transactionStatus = 'PENDING';
-            break;
-          case 'PAYMENT_DECLINED':
-          case 'PAYMENT_ERROR':
-            transactionStatus = 'FAILED';
-            break;
-          default:
-            transactionStatus = 'FAILED';
-        }
-
-        // Update transaction in database
-        await transaction.updateTransactionStatus(
-          transactionStatus,
-          paymentStatus
-        );
-
-        if (transactionStatus === 'SUCCESS' && transaction.metadata?.cartItems) {
-          const cartItemIds = transaction.metadata.cartItems.map(item => 
-            new mongoose.Types.ObjectId(item.id)
-          );
-
-          // Update all channels in the cart to 'sold' status
-          await Channel.updateMany(
-            { _id: { $in: cartItemIds } },
-            { $set: { status: 'Sold' } }
-          );
-
-        }
-
+    // Call PhonePe SDK to get order status
+    let response;
+    try {
+      response = await phonepeClient.getOrderStatus(transactionId);
+    } catch (apiError) {
+      if (apiError.code === 'TOO_MANY_REQUESTS' || apiError.name === 'TooManyRequests' || apiError.message.includes('Too many requests')) {
         return res.status(200).json({
           success: true,
-          data: {
-            transactionId,
-            status: transactionStatus,
-            details: paymentStatus
-          }
+          status: transaction.status,
+          transaction: {
+            id: transaction.transactionId,
+            amount: transaction.amount,
+            status: transaction.status
+          },
+          message: "Rate limited by gateway, returning current known status."
         });
+      }
+      throw apiError;
+    }
+    
+    // PhonePe V2 states: COMPLETED, FAILED, PENDING
+    const state = response.state;
 
-      } catch (error) {
-        lastError = error;
-        console.error(`Attempt ${attempt} failed:`, error.message);
+    // Map PhonePe status to our transaction status
+    let mappedStatus = 'PENDING';
+    if (state === 'COMPLETED') {
+      mappedStatus = 'SUCCESS';
+    } else if (state === 'FAILED') {
+      mappedStatus = 'FAILED';
+    }
+
+    const wasAlreadySuccess = transaction.status === 'SUCCESS';
+
+    // Save the status
+    transaction.status = mappedStatus;
+    transaction.updatedAt = new Date();
+    
+    // Merge the new response with the old one (if needed) or replace it
+    const plainResponse = JSON.parse(JSON.stringify(response));
+    transaction.phonepeResponse = {
+      ...transaction.phonepeResponse,
+      statusResponse: plainResponse
+    };
+    transaction.markModified('phonepeResponse');
+
+    await transaction.save();
+
+    // Update Deal or Channel status based on transaction success
+    if (transaction.metadata?.dealId) {
+      let dealPaymentStatus = 'notpaid';
+      if (mappedStatus === 'SUCCESS') dealPaymentStatus = 'paid';
+      else if (mappedStatus === 'PENDING') dealPaymentStatus = 'pending';
+      
+      try {
+        const updatedDeal = await EscrowDeal.findByIdAndUpdate(transaction.metadata.dealId, { payment: dealPaymentStatus });
         
-        if (attempt < retryCount) {
-          await new Promise(resolve => setTimeout(resolve, delayMs));
-          continue;
+        if (dealPaymentStatus === 'paid' && updatedDeal && updatedDeal.channel) {
+          await YouTubeChannel.findByIdAndUpdate(updatedDeal.channel, {
+            $set: { status: 'Sold', sold: true }
+          });
         }
+      } catch (err) {
+        console.error('Failed to update deal payment status:', err);
+      }
+    } else if (mappedStatus === 'SUCCESS' && transaction.metadata?.cartItems?.length > 0) {
+      try {
+        const channelIds = transaction.metadata.cartItems.map(item => item.id);
+        await YouTubeChannel.updateMany(
+          { _id: { $in: channelIds } },
+          { $set: { status: 'Sold', sold: true } }
+        );
+      } catch (err) {
+        console.error('Failed to update channel status:', err);
       }
     }
 
-    // If all retries failed
-    console.error('All payment status check attempts failed:', lastError);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to check payment status after multiple attempts',
-      error: lastError.response?.data?.message || lastError.message
+    if (mappedStatus === 'SUCCESS' && !wasAlreadySuccess) {
+      try {
+        const user = await User.findById(transaction.user);
+        if (user && user.email) {
+          const emailHtml = `
+            <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+              <div style="text-align: center; margin-bottom: 20px;">
+                <img src="cid:socialswap-logo" alt="SocialSwap Logo" style="max-height: 80px;" />
+              </div>
+              <h2 style="color: #10B981; text-align: center;">Payment Successful!</h2>
+              <p>Hi ${user.name || 'there'},</p>
+              <p>We've successfully received your payment of <strong>₹${transaction.amount}</strong> for your recent transaction.</p>
+              <p><strong>Transaction ID:</strong> ${transaction.transactionId}</p>
+              <p>Your escrow deal or channel purchase is now confirmed. You can view the details in your profile.</p>
+              <div style="text-align: center; margin: 30px 0;">
+                <a href="https://www.socialswap.in/user/profile" style="background-color: #7C3AED; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">Go to Profile</a>
+              </div>
+              <p>Thank you for using SocialSwap!</p>
+              <p>Best regards,<br>The SocialSwap Team</p>
+            </div>
+          `;
+          sendMailWithLogo(user.email, 'Payment Successful - SocialSwap', emailHtml).catch(err => console.error('Payment email failed:', err));
+        }
+      } catch (err) {
+        console.error('Failed to send payment email:', err);
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      status: mappedStatus,
+      data: {
+        channelId: transaction.metadata?.cartItems?.[0]?.id || transaction.metadata?.dealId || 'N/A',
+        details: {
+          code: mappedStatus === 'SUCCESS' ? 'PAYMENT_SUCCESS' : (mappedStatus === 'PENDING' ? 'PAYMENT_PENDING' : 'PAYMENT_ERROR'),
+          data: {
+            merchantTransactionId: transaction.transactionId,
+            amount: transaction.amount,
+            paymentInstrument: {
+              type: response.paymentInstrument?.type || 'PAY_PAGE'
+            }
+          }
+        }
+      },
+      transaction: {
+        id: transaction.transactionId,
+        amount: transaction.amount,
+        status: mappedStatus
+      },
+      rawStatus: response
     });
 
   } catch (error) {
@@ -297,12 +300,10 @@ const getTransactions = async (req, res) => {
   try {
     const currentUser = req.user;
 
-    // Get transactions
-    const transactions = await Transaction.find({user:currentUser.userId})
-      .sort({ createdAt: -1 }) // Sort by newest first
-      .select('-phonepeResponse.paymentInstrument'); // Exclude sensitive payment details
+    const transactions = await Transaction.find({ user: currentUser.userId })
+      .sort({ createdAt: -1 })
+      .select('-phonepeResponse.paymentInstrument');
 
-    // Format response
     const formattedTransactions = transactions.map(transaction => ({
       transactionId: transaction.transactionId,
       merchantTransactionId: transaction.merchantTransactionId,
@@ -329,11 +330,6 @@ const getTransactions = async (req, res) => {
   }
 };
 
-/**
- * Get transaction details by transaction ID
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
- */
 const getTransactionById = async (req, res) => {
   try {
     const { transactionId } = req.params;
@@ -341,7 +337,7 @@ const getTransactionById = async (req, res) => {
 
     const transaction = await Transaction.findOne({
       transactionId,
-      'user.userId': currentUser.userId
+      user: currentUser.userId
     }).select('-phonepeResponse.paymentInstrument');
 
     if (!transaction) {
@@ -378,8 +374,6 @@ const getTransactionById = async (req, res) => {
 // Register routes
 router.get('/transactions', auth, getTransactions);
 router.get('/transactions/:transactionId', auth, getTransactionById);
-
-// Register routes
 router.post('/create-order', auth, createPaymentOrder);
 router.get('/status/:transactionId', checkPaymentStatus);
 
