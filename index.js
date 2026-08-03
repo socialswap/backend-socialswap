@@ -267,7 +267,7 @@ io.on('connection', (socket) => {
               const payload = JSON.stringify({
                 title: `New message from Admin`,
                 body: newMessage.text || (newMessage.mediaUrl ? 'Sent an image' : 'Sent an update'),
-                url: `/chat` // Redirect URL for user
+                url: `/user/chat` // Redirect URL for user
               });
               
               for (let sub of subscriptions) {
