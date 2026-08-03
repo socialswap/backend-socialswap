@@ -35,9 +35,9 @@ const channelSchema = new mongoose.Schema({
     type: [String],
     validate: {
       validator: function(v) {
-        return v && v.length >= 2 && v.length <= 4;
+        return v && v.length >= 2 && v.length <= 10;
       },
-      message: 'Between 2 and 4 images are required'
+      message: 'Between 2 and 10 images are required'
     },
     required: [true, 'Channel images are required']
   },

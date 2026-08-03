@@ -440,8 +440,8 @@ exports.updateChannel = async (req, res) => {
     if (newImageUrls.length < 2) {
       return res.status(400).json({ message: 'At least 2 channel screenshots are required' });
     }
-    if (newImageUrls.length > 4) {
-      return res.status(400).json({ message: 'Maximum 4 channel screenshots are allowed' });
+    if (newImageUrls.length > 10) {
+      return res.status(400).json({ message: 'Maximum 10 channel screenshots are allowed' });
     }
 
     // Create update data using only the fields that are being updated

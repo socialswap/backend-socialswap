@@ -30,8 +30,8 @@ const validateFiles = async (req, res, next) => {
   }
 
   // Validate channel images
-  if (!images || images.length < 2 || images.length > 4) {
-    return res.status(400).json({ message: 'Between 2 and 4 channel images are required' });
+  if (!images || images.length < 2 || images.length > 10) {
+    return res.status(400).json({ message: 'Between 2 and 10 channel images are required' });
   }
 
   try {
@@ -68,7 +68,7 @@ const upload = multer({
 
 const uploadFields = upload.fields([
   { name: 'banner', maxCount: 1 },
-  { name: 'images', maxCount: 4 }
+  { name: 'images', maxCount: 10 }
 ]);
 
 // ImgBB helper removed
@@ -106,10 +106,10 @@ const createChannel = async (req, res) => {
       });
     }
 
-    if (files.images.length > 4) {
+    if (files.images.length > 10) {
       return res.status(400).json({
         success: false,
-        message: 'Maximum 4 images allowed'
+        message: 'Maximum 10 images allowed'
       });
     }
 

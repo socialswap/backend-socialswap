@@ -4,7 +4,6 @@ const cors = require('cors');
 const helmet = require('helmet'); // For adding security headers
 const connectDB = require('./config/db');
 const youtubeChannelRoutes = require('./routes/routes');
-const bannerRoutes = require('./routes/bannerRoutes');
 const payment = require('./controllers/payment');
 const admin = require('./controllers/admin/admin');
 const order = require('./controllers/orders')
@@ -157,7 +156,6 @@ Sitemap: https://www.socialswap.in/sitemap.xml`);
 
 // Route for handling API requests
 app.use('/api', youtubeChannelRoutes);
-app.use('/api', bannerRoutes);
 app.use('/api', payment);
 app.use('/api', admin);
 app.use('/api', order);
