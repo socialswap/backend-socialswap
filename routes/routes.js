@@ -124,10 +124,10 @@ router.get('/blogs/:id', cache(1800), getBlog);    // 30 min cache
 router.post('/blogs/:id/views', incrementBlogViews);
 router.get('/admin/blogs', auth, getAllBlogs);
 router.post('/admin/blogs', auth, createBlog);
-router.put('/admin/blogs/:id', auth, updateBlog);
-router.delete('/admin/blogs/:id', auth, deleteBlog);
 router.post('/admin/blogs/upload-image', auth, upload.single('image'), uploadBlogImage);
 router.delete('/admin/blogs/delete-image', auth, deleteBlogImage);
+router.put('/admin/blogs/:id', auth, updateBlog);
+router.delete('/admin/blogs/:id', auth, deleteBlog);
 
 // YouTube Channel Info — auto-fill form from YouTube link / ID / handle
 // Requires auth so only logged-in users can consume API quota
