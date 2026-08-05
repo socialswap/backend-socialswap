@@ -129,10 +129,20 @@ exports.uploadBlogImage = async (req, res) => {
 // Admin: Delete blog image
 exports.deleteBlogImage = async (req, res) => {
   try {
-    const { imageUrl } = req.body;
+    const imageUrl = req.query.imageUrl || req.body.imageUrl;
     if (!imageUrl) {
       return res.status(400).json({ success: false, message: 'Image URL is required' });
     }
+
+    // Check if the image belongs to our R2 bucket
+    const publicUrl = process.env.CLOUDFLARE_R2_PUBLIC_URL;
+    const isR2 = (publicUrl && imageUrl.startsWith(publicUrl)) || imageUrl.includes('r2.dev');
+
+    if (!isR2) {
+      // External image (e.g. Cloudinary, YouTube) - just return success to clear from form/DB
+      return res.status(200).json({ success: true, message: 'External image reference cleared successfully' });
+    }
+
     await deleteFromR2(imageUrl);
     res.status(200).json({ success: true, message: 'Image deleted successfully' });
   } catch (err) {
