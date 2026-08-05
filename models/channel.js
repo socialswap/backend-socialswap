@@ -49,6 +49,11 @@ const channelSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  dashboardImage: {
+    type: String,
+    required: [true, 'Dashboard image is required'],
+    default: ''
+  },
   price: {
     type: String,
     required: true,

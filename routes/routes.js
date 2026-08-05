@@ -40,7 +40,8 @@ const { getHomeVideo, updateHomeVideo } = require('../controllers/homeVideoContr
 
 const uploadFields = upload.fields([
   { name: 'banner', maxCount: 1 },
-  { name: 'images', maxCount: 10 }
+  { name: 'images', maxCount: 10 },
+  { name: 'dashboardImage', maxCount: 1 }
 ]);
 
 const processFormData = upload.none(); // Use .none() since we're only handling text fields

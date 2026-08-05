@@ -68,7 +68,8 @@ const upload = multer({
 
 const uploadFields = upload.fields([
   { name: 'banner', maxCount: 1 },
-  { name: 'images', maxCount: 10 }
+  { name: 'images', maxCount: 10 },
+  { name: 'dashboardImage', maxCount: 1 }
 ]);
 
 // ImgBB helper removed
@@ -112,11 +113,25 @@ const createChannel = async (req, res) => {
         message: 'Maximum 10 images allowed'
       });
     }
+    
+    // Validate dashboardImage
+    if (!files || !files.dashboardImage || !files.dashboardImage[0]) {
+      return res.status(400).json({
+        success: false,
+        message: 'Dashboard image is required'
+      });
+    }
 
     // Upload banner to R2
     let bannerUrl = '';
     if (files.banner && files.banner[0]) {
       bannerUrl = await uploadToR2(files.banner[0].buffer, files.banner[0].originalname, files.banner[0].mimetype);
+    }
+
+    // Upload dashboardImage to R2
+    let dashboardImage = '';
+    if (files.dashboardImage && files.dashboardImage[0]) {
+      dashboardImage = await uploadToR2(files.dashboardImage[0].buffer, files.dashboardImage[0].originalname, files.dashboardImage[0].mimetype);
     }
 
     // Upload all channel images to R2
@@ -128,6 +143,7 @@ const createChannel = async (req, res) => {
       ...body,
       bannerUrl,
       imageUrls,
+      dashboardImage,
       // Both createdBy (ObjectId) and seller (string) stored for compatibility
       createdBy: user.userId,
       seller: user.userId,

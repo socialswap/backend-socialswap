@@ -436,6 +436,19 @@ exports.updateChannel = async (req, res) => {
       newImageUrls = [...newImageUrls, ...uploadedUrls];
     }
 
+    // Upload new dashboardImage if provided
+    let dashboardImage = existingChannel.dashboardImage;
+    if (req.files && req.files.dashboardImage && req.files.dashboardImage[0]) {
+      if (existingChannel.dashboardImage) {
+        await deleteFromR2(existingChannel.dashboardImage).catch(console.error);
+      }
+      dashboardImage = await uploadToR2(
+        req.files.dashboardImage[0].buffer,
+        req.files.dashboardImage[0].originalname,
+        req.files.dashboardImage[0].mimetype
+      );
+    }
+
     // Validate screenshot counts
     if (newImageUrls.length < 2) {
       return res.status(400).json({ message: 'At least 2 channel screenshots are required' });
@@ -472,6 +485,7 @@ exports.updateChannel = async (req, res) => {
       logoUrl: req.body.logoUrl !== undefined ? req.body.logoUrl : existingChannel.logoUrl,
       bannerUrl: bannerUrl,
       imageUrls: newImageUrls,
+      dashboardImage: dashboardImage,
       avatar: req.body.avatar !== undefined ? req.body.avatar : existingChannel.avatar
     };
 
