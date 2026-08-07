@@ -145,6 +145,13 @@ exports.getChannels = async (req, res) => {
     if (req.query.monetized !== undefined) {
       query.monetized = req.query.monetized === 'true';
     }
+    if (req.query.mostDemanding !== undefined) {
+      if (req.query.mostDemanding === 'true') {
+        query.mostDemanding = true;
+      } else {
+        query.mostDemanding = { $ne: true };
+      }
+    }
     if (req.query.monetization) {
       if (req.query.monetization === 'monetized') {
         query.monetized = true;
@@ -252,16 +259,21 @@ exports.getChannelByUsername = async (req, res) => {
 };
 
 
-exports.demandingChannel= async (req, res) => {
+exports.demandingChannel = async (req, res) => {
   try {
-    const updatedChannel = await YouTubeChannel.find({mostDemanding:true,      status: { $ne: 'sold' } // Exclude sold channels
-    });
+    const limit = parseInt(req.query.limit) || 20;
+    const updatedChannel = await YouTubeChannel.find({
+      mostDemanding: true,
+      status: { $ne: 'sold' } // Exclude sold channels
+    })
+      .sort({ createdAt: -1 })
+      .limit(limit);
 
     res.json(updatedChannel);
   } catch (error) {
-    res.status(500).json({ message: 'Error updating channel', error: error.message });
+    res.status(500).json({ message: 'Error fetching demanding channels', error: error.message });
   }
-}
+};
 
 const validateAndConvertLanguage = (language) => {
   if (!language) {
