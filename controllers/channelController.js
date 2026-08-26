@@ -492,7 +492,10 @@ exports.updateChannel = async (req, res) => {
       organicGrowth: req.body.organicGrowth,
       joinedDate: req.body.joinedDate,
       seller: req.body.seller,
-      status: req.body.status,
+      // Only admins can change status directly; sellers preserve the existing status
+      status: req.user.role === 'admin' && req.body.status !== undefined
+        ? req.body.status
+        : existingChannel.status,
       sold: req.body.sold,
       logoUrl: req.body.logoUrl !== undefined ? req.body.logoUrl : existingChannel.logoUrl,
       bannerUrl: bannerUrl,
