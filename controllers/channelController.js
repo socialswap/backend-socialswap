@@ -690,3 +690,42 @@ exports.getAdminUserChannels = async (req, res) => {
   }
 };
 
+
+// Admin: Approve a channel — sets status to 'approved' so it appears publicly
+exports.approveChannel = async (req, res) => {
+  try {
+    if (!req.user || req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Admin access required' });
+    }
+    const channel = await YouTubeChannel.findByIdAndUpdate(
+      req.params.id,
+      { status: 'approved' },
+      { new: true }
+    );
+    if (!channel) return res.status(404).json({ message: 'Channel not found' });
+    res.status(200).json({ success: true, message: 'Channel approved successfully', channel });
+  } catch (err) {
+    console.error('Error approving channel:', err);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+// Admin: Reject a channel — sets status to 'rejected' and hides it from public listings
+exports.rejectChannel = async (req, res) => {
+  try {
+    if (!req.user || req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Admin access required' });
+    }
+    const { reason } = req.body;
+    const channel = await YouTubeChannel.findByIdAndUpdate(
+      req.params.id,
+      { status: 'rejected', rejectionReason: reason || '' },
+      { new: true }
+    );
+    if (!channel) return res.status(404).json({ message: 'Channel not found' });
+    res.status(200).json({ success: true, message: 'Channel rejected', channel });
+  } catch (err) {
+    console.error('Error rejecting channel:', err);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};

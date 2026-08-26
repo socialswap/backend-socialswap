@@ -147,7 +147,7 @@ const createChannel = async (req, res) => {
       // Both createdBy (ObjectId) and seller (string) stored for compatibility
       createdBy: user.userId,
       seller: user.userId,
-      status: 'Available',
+      status: 'pending',
       contactInfo: {
         email: body.userEmail,
         phone: body.contactNumber

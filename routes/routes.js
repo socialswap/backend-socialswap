@@ -9,7 +9,9 @@ const {
   getChannelsBySeller,
   demandingChannel,
   getAdminUserChannels,
-  getChannelByUsername
+  getChannelByUsername,
+  approveChannel,
+  rejectChannel
 } = require('../controllers/channelController');
 const router = express.Router();
 const auth = require('../middleware/auth');
@@ -83,6 +85,10 @@ router.get('/channels/status/:status', getChannelsByStatus);
 
 // Admin: Get all channels for a specific user
 router.get('/admin/users/:userId/channels', auth, getAdminUserChannels);
+
+// Admin: Approve or reject a channel
+router.patch('/admin/channels/:id/approve', auth, approveChannel);
+router.patch('/admin/channels/:id/reject', auth, rejectChannel);
 
 // Search channels
 router.get('/channels/search', searchChannels);
