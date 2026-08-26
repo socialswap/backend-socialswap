@@ -51,7 +51,7 @@ exports.placeOrder = async (req, res) => {
 exports.getChannels = async (req, res) => {
   try {
     req.query = { ...req.query, ...req.body };
-    const query = { status: { $in: ['Available', 'approved'] } };
+    const query = { status: { $in: ['Available', 'approved'] }, isHidden: { $ne: true } };
 
     // Helper function to parse array filters
     const parseArray = (str) => {
@@ -264,7 +264,8 @@ exports.demandingChannel = async (req, res) => {
     const limit = parseInt(req.query.limit) || 20;
     const updatedChannel = await YouTubeChannel.find({
       mostDemanding: true,
-      status: { $ne: 'sold' } // Exclude sold channels
+      status: { $ne: 'sold' }, // Exclude sold channels
+      isHidden: { $ne: true }  // Exclude admin-hidden channels
     })
       .sort({ createdAt: -1 })
       .limit(limit);
@@ -492,7 +493,10 @@ exports.updateChannel = async (req, res) => {
       organicGrowth: req.body.organicGrowth,
       joinedDate: req.body.joinedDate,
       seller: req.body.seller,
-      status: req.body.status,
+      // Only admins can change status directly; sellers preserve the existing status
+      status: req.user.role === 'admin' && req.body.status !== undefined
+        ? req.body.status
+        : existingChannel.status,
       sold: req.body.sold,
       logoUrl: req.body.logoUrl !== undefined ? req.body.logoUrl : existingChannel.logoUrl,
       bannerUrl: bannerUrl,
@@ -690,3 +694,262 @@ exports.getAdminUserChannels = async (req, res) => {
   }
 };
 
+
+// Admin: Approve a channel — sets status to 'approved' so it appears publicly
+exports.approveChannel = async (req, res) => {
+  try {
+    if (!req.user || req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Admin access required' });
+    }
+    const channel = await YouTubeChannel.findByIdAndUpdate(
+      req.params.id,
+      { status: 'approved' },
+      { new: true }
+    );
+    if (!channel) return res.status(404).json({ message: 'Channel not found' });
+    res.status(200).json({ success: true, message: 'Channel approved successfully', channel });
+  } catch (err) {
+    console.error('Error approving channel:', err);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+// Admin: Reject a channel — sets status to 'rejected' and hides it from public listings
+exports.rejectChannel = async (req, res) => {
+  try {
+    if (!req.user || req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Admin access required' });
+    }
+    const { reason } = req.body;
+    const channel = await YouTubeChannel.findByIdAndUpdate(
+    );
+
+    res.json(updatedChannel);
+  } catch (err) {
+    console.error('Update channel error:', err);
+    if (err.name === 'ValidationError') {
+      return res.status(400).json({ 
+        message: 'Validation Error', 
+        details: Object.values(err.errors).map(e => e.message)
+      });
+    }
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+// Delete a channel
+exports.deleteChannel = async (req, res) => {
+  try {
+    const channel = await YouTubeChannel.findById(req.params.id);
+    if (!channel) {
+      return res.status(404).json({ message: 'Channel not found' });
+    }
+
+    // Verify ownership or admin privileges
+    if (channel.createdBy.toString() !== req.user.userId && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'You are not authorized to delete this channel' });
+    }
+
+    // Delete files from R2
+    if (channel.bannerUrl) {
+      await deleteFromR2(channel.bannerUrl);
+    }
+    if (channel.imageUrls && channel.imageUrls.length > 0) {
+      await Promise.all(channel.imageUrls.map(url => deleteFromR2(url)));
+    }
+
+    await YouTubeChannel.findByIdAndDelete(req.params.id);
+    res.json({ message: 'Channel deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Get channels by status
+exports.getChannelsByStatus = async (req, res) => {
+  try {
+    const channels = await YouTubeChannel.find({ status: req.params.status });
+    res.json(channels);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Search channels
+exports.searchChannels = async (req, res) => {
+  try {
+    const { query } = req.query;
+    const channels = await YouTubeChannel.find({
+      $or: [
+        { name: { $regex: query, $options: 'i' } },
+        { customUrl: { $regex: query, $options: 'i' } },
+        { category: { $regex: query, $options: 'i' } }
+      ]
+    });
+    res.json(channels);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Get channels by the authenticated user (createdBy or seller fallback)
+exports.getChannelsBySeller = async (req, res) => {
+  try {
+    const { user } = req;
+      
+    // Ensure user is authenticated
+    if (!user || !user.userId) {
+      return res.status(401).json({ message: 'User must be authenticated' });
+    }
+
+    // Query by createdBy (ObjectId) OR seller (string) for backward compatibility
+    const baseQuery = {
+      $or: [
+        { createdBy: user.userId },
+        { seller: user.userId }
+      ]
+    };
+
+    // Add status filter if provided
+    if (req.query.status) {
+      baseQuery.status = req.query.status;
+    }
+
+    // Pagination
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
+
+    // Get total count
+    const totalCount = await YouTubeChannel.countDocuments(baseQuery);
+
+    // Fetch channels
+    const channels = await YouTubeChannel.find(baseQuery)
+      .select('-__v')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    const totalPages = Math.ceil(totalCount / limit);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        channels,
+        pagination: {
+          currentPage: page,
+          totalPages,
+          totalChannels: totalCount,
+          hasNextPage: page < totalPages,
+          hasPrevPage: page > 1,
+          limit
+        }
+      }
+    });
+
+  } catch (err) {
+    console.error('Error fetching user channels:', err);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching channels',
+      error: err.message
+    });
+  }
+};
+
+// Admin: Get all channels for a specific user (regardless of status)
+exports.getAdminUserChannels = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    const query = {
+      $or: [
+        { createdBy: userId },
+        { seller: userId }
+      ]
+    };
+
+    const channels = await YouTubeChannel.find(query)
+      .select('-__v')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.status(200).json({
+      success: true,
+      channels
+    });
+
+  } catch (err) {
+    console.error('Error fetching admin user channels:', err);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching channels for user',
+      error: err.message
+    });
+  }
+};
+
+
+// Admin: Approve a channel — sets status to 'approved' so it appears publicly
+exports.approveChannel = async (req, res) => {
+  try {
+    if (!req.user || req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Admin access required' });
+    }
+    const channel = await YouTubeChannel.findByIdAndUpdate(
+      req.params.id,
+      { status: 'approved' },
+      { new: true }
+    );
+    if (!channel) return res.status(404).json({ message: 'Channel not found' });
+    res.status(200).json({ success: true, message: 'Channel approved successfully', channel });
+  } catch (err) {
+    console.error('Error approving channel:', err);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+// Admin: Reject a channel — sets status to 'rejected' and hides it from public listings
+exports.rejectChannel = async (req, res) => {
+  try {
+    if (!req.user || req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Admin access required' });
+    }
+    const { reason } = req.body;
+    const channel = await YouTubeChannel.findByIdAndUpdate(
+      req.params.id,
+      { status: 'rejected', rejectionReason: reason || '' },
+      { new: true }
+    );
+    if (!channel) return res.status(404).json({ message: 'Channel not found' });
+    res.status(200).json({ success: true, message: 'Channel rejected', channel });
+  } catch (err) {
+    console.error('Error rejecting channel:', err);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+// Admin: Toggle channel visibility (hide/show without deleting)
+exports.toggleChannelVisibility = async (req, res) => {
+  try {
+    if (!req.user || req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Admin access required' });
+    }
+    const channel = await YouTubeChannel.findById(req.params.id);
+    if (!channel) return res.status(404).json({ message: 'Channel not found' });
+
+    const newHiddenState = !channel.isHidden;
+    channel.isHidden = newHiddenState;
+    await channel.save();
+
+    res.status(200).json({
+      success: true,
+      message: newHiddenState ? 'Channel hidden from public' : 'Channel is now visible on public site',
+      isHidden: newHiddenState,
+      channel
+    });
+  } catch (err) {
+    console.error('Error toggling channel visibility:', err);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
