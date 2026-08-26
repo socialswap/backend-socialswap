@@ -173,6 +173,11 @@ const channelSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  // Admin can hide a channel from public without deleting it
+  isHidden: {
+    type: Boolean,
+    default: false
+  },
   // SEO fields
   metaTitle: { type: String, trim: true, maxlength: 60 },
   metaDescription: { type: String, trim: true, maxlength: 160 },
