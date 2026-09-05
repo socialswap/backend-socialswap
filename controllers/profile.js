@@ -172,17 +172,37 @@ exports.getAllUsers = async (req, res) => {
   }
 };
 
-// Get a specific user
+// Get a specific user (enhanced with channels and contact info for admin)
 exports.getUser = async (req, res) => {
   try {
     if (req.user.role !== 'admin' && req.user.userId !== req.params.userId) {
       return res.status(403).json({ message: 'Access denied' });
     }
-    const user = await User.findById(req.params.userId).select('-password');
+    const user = await User.findById(req.params.userId).select('-password').lean();
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
-    res.json(user);
+
+    const YouTubeChannel = require('../models/channel');
+    const channels = await YouTubeChannel.find({
+      $or: [
+        { createdBy: user._id },
+        { seller: user._id.toString() }
+      ]
+    }).sort({ createdAt: -1 }).lean();
+
+    // Check for seller contact number from their listed channels if mobile is not in User
+    const sellerPhone = channels.find(c => c.contactInfo?.phone)?.contactInfo?.phone || '';
+    const sellerEmail = channels.find(c => c.contactInfo?.email)?.contactInfo?.email || '';
+
+    res.json({
+      ...user,
+      contactNumber: user.mobile || sellerPhone || '',
+      sellerPhone,
+      sellerEmail,
+      channels,
+      channelCount: channels.length
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
