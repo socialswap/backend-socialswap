@@ -12,7 +12,8 @@ const {
   getChannelByUsername,
   approveChannel,
   rejectChannel,
-  toggleChannelVisibility
+  toggleChannelVisibility,
+  toggleChannelSold
 } = require('../controllers/channelController');
 const router = express.Router();
 const auth = require('../middleware/auth');
@@ -91,6 +92,7 @@ router.get('/admin/users/:userId/channels', auth, getAdminUserChannels);
 router.patch('/admin/channels/:id/approve', auth, approveChannel);
 router.patch('/admin/channels/:id/reject', auth, rejectChannel);
 router.patch('/admin/channels/:id/toggle-visibility', auth, toggleChannelVisibility);
+router.patch('/admin/channels/:id/toggle-sold', auth, toggleChannelSold);
 
 // Search channels
 router.get('/channels/search', searchChannels);
