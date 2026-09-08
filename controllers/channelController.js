@@ -470,6 +470,23 @@ exports.updateChannel = async (req, res) => {
       return res.status(400).json({ message: 'Maximum 10 channel screenshots are allowed' });
     }
 
+    // Determine sold state and target status
+    let isSoldRequested = undefined;
+    if (req.body.sold !== undefined) {
+      isSoldRequested = req.body.sold === true || req.body.sold === 'true';
+    }
+
+    let targetStatus = existingChannel.status;
+    if (req.user.role === 'admin' && req.body.status !== undefined) {
+      targetStatus = req.body.status;
+    } else if (isSoldRequested !== undefined) {
+      if (isSoldRequested) {
+        targetStatus = 'sold';
+      } else if (targetStatus === 'sold' || targetStatus === 'Sold') {
+        targetStatus = 'approved';
+      }
+    }
+
     // Create update data using only the fields that are being updated
     const updateData = {
       name: req.body.name,
@@ -493,11 +510,8 @@ exports.updateChannel = async (req, res) => {
       organicGrowth: req.body.organicGrowth,
       joinedDate: req.body.joinedDate,
       seller: req.body.seller,
-      // Only admins can change status directly; sellers preserve the existing status
-      status: req.user.role === 'admin' && req.body.status !== undefined
-        ? req.body.status
-        : existingChannel.status,
-      sold: req.body.sold,
+      status: targetStatus,
+      sold: isSoldRequested !== undefined ? isSoldRequested : existingChannel.sold,
       logoUrl: req.body.logoUrl !== undefined ? req.body.logoUrl : existingChannel.logoUrl,
       bannerUrl: bannerUrl,
       imageUrls: newImageUrls,
@@ -950,6 +964,35 @@ exports.toggleChannelVisibility = async (req, res) => {
     });
   } catch (err) {
     console.error('Error toggling channel visibility:', err);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+// Admin: Toggle channel sold status (Mark as sold / unsold)
+exports.toggleChannelSold = async (req, res) => {
+  try {
+    if (!req.user || req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Admin access required' });
+    }
+    const channel = await YouTubeChannel.findById(req.params.id);
+    if (!channel) return res.status(404).json({ message: 'Channel not found' });
+
+    const isCurrentlySold = channel.sold === true || channel.status === 'sold' || channel.status === 'Sold';
+    const newSoldState = !isCurrentlySold;
+
+    channel.sold = newSoldState;
+    channel.status = newSoldState ? 'sold' : 'approved';
+    await channel.save();
+
+    res.status(200).json({
+      success: true,
+      message: newSoldState ? 'Channel marked as sold out' : 'Channel marked as available',
+      sold: newSoldState,
+      status: channel.status,
+      channel
+    });
+  } catch (err) {
+    console.error('Error toggling channel sold status:', err);
     res.status(500).json({ message: 'Internal server error' });
   }
 };

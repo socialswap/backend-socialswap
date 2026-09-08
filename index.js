@@ -280,6 +280,64 @@ io.on('connection', (socket) => {
                 });
               }
             } catch(err) { console.error('Push error (user loop):', err); }
+
+            // Send email notification to the user so they get notified even when offline
+            try {
+              const recipientUser = await require('./models/user').findById(otherParticipant);
+              if (recipientUser && recipientUser.email) {
+                const { sendMailWithLogo } = require('./utils/mailer');
+                const cleanText = newMessage.text 
+                  ? newMessage.text.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br/>')
+                  : (newMessage.mediaUrl ? '📷 [Image Attachment]' : 'New message from support');
+                
+                const emailHtml = `
+                  <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; color: #1f2937; background-color: #f9fafb; border-radius: 16px;">
+                    <div style="text-align: center; margin-bottom: 24px;">
+                      <img src="cid:socialswap-logo" alt="SocialSwap" style="height: 42px; width: auto;" />
+                    </div>
+                    <div style="background: #ffffff; border-radius: 16px; padding: 32px 28px; border: 1px solid #e5e7eb; box-shadow: 0 4px 12px rgba(0,0,0,0.04);">
+                      <div style="display: inline-block; padding: 4px 12px; background-color: #EDE9FE; color: #7C3AED; border-radius: 9999px; font-size: 12px; font-weight: 700; text-transform: uppercase; margin-bottom: 16px;">
+                        💬 Support Message
+                      </div>
+                      <h2 style="color: #111827; margin: 0 0 12px 0; font-size: 20px; font-weight: 700;">
+                        New Reply from SocialSwap Support
+                      </h2>
+                      <p style="font-size: 15px; line-height: 1.6; color: #4b5563; margin: 0 0 16px 0;">
+                        Hello <strong>${recipientUser.name || 'there'}</strong>,
+                      </p>
+                      <p style="font-size: 15px; line-height: 1.6; color: #4b5563; margin: 0 0 20px 0;">
+                        An agent replied to your inquiry on SocialSwap:
+                      </p>
+                      
+                      <div style="background: #F5F3FF; border-left: 4px solid #7C3AED; padding: 16px 20px; border-radius: 10px; margin-bottom: 24px; font-size: 15px; line-height: 1.6; color: #374151;">
+                        ${cleanText}
+                      </div>
+
+                      <div style="text-align: center; margin: 28px 0 12px 0;">
+                        <a href="https://www.socialswap.in/user/chat" style="display: inline-block; background: linear-gradient(135deg, #7C3AED, #9333EA); color: #ffffff; font-weight: 700; padding: 14px 32px; border-radius: 12px; text-decoration: none; font-size: 15px; box-shadow: 0 4px 14px rgba(124, 58, 237, 0.35);">
+                          Open Chat & Reply →
+                        </a>
+                      </div>
+                    </div>
+                    <p style="text-align: center; font-size: 12px; color: #9ca3af; margin-top: 24px;">
+                      You received this email because you started a chat inquiry on <a href="https://www.socialswap.in" style="color: #7C3AED; text-decoration: none;">SocialSwap</a>.
+                    </p>
+                  </div>
+                `;
+
+                sendMailWithLogo(
+                  recipientUser.email,
+                  `New reply from SocialSwap Support: "${(newMessage.text || 'New message').substring(0, 45)}"`,
+                  emailHtml
+                ).then(sent => {
+                  console.log(`[Chat Email] Notification sent to ${recipientUser.email}: ${sent}`);
+                }).catch(err => {
+                  console.error('[Chat Email] Error sending notification email:', err);
+                });
+              }
+            } catch(mailErr) {
+              console.error('[Chat Email] Lookup error:', mailErr);
+            }
           }
         }
       }

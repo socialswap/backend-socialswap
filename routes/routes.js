@@ -12,7 +12,8 @@ const {
   getChannelByUsername,
   approveChannel,
   rejectChannel,
-  toggleChannelVisibility
+  toggleChannelVisibility,
+  toggleChannelSold
 } = require('../controllers/channelController');
 const router = express.Router();
 const auth = require('../middleware/auth');
@@ -91,6 +92,7 @@ router.get('/admin/users/:userId/channels', auth, getAdminUserChannels);
 router.patch('/admin/channels/:id/approve', auth, approveChannel);
 router.patch('/admin/channels/:id/reject', auth, rejectChannel);
 router.patch('/admin/channels/:id/toggle-visibility', auth, toggleChannelVisibility);
+router.patch('/admin/channels/:id/toggle-sold', auth, toggleChannelSold);
 
 // Search channels
 router.get('/channels/search', searchChannels);
@@ -165,8 +167,8 @@ router.post('/contact', sendContactEmail);
 
 // Services — admin
 router.get('/admin/services', auth, getAdminServices);
-router.post('/admin/services', auth, upload.array('images', 8), createService);
-router.put('/admin/services/:id', auth, upload.array('images', 8), updateService);
+router.post('/admin/services', auth, upload.any(), createService);
+router.put('/admin/services/:id', auth, upload.any(), updateService);
 router.delete('/admin/services/:id', auth, deleteService);
 
 // Push Notifications
