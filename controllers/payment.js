@@ -47,6 +47,9 @@ const createPaymentOrder = async (req, res) => {
     if (cartItems && cartItems.length > 0) {
       const soldChannels = await Promise.all(
         cartItems.map(async (item) => {
+          // Skip check for service purchases
+          if (item?.itemType && item?.itemType !== 'channel') return null;
+
           const channel = await YouTubeChannel.findById(item?.id);
           
           if (channel && channel.status === 'Sold') {
@@ -224,11 +227,16 @@ const checkPaymentStatus = async (req, res) => {
       }
     } else if (mappedStatus === 'SUCCESS' && transaction.metadata?.cartItems?.length > 0) {
       try {
-        const channelIds = transaction.metadata.cartItems.map(item => item.id);
-        await YouTubeChannel.updateMany(
-          { _id: { $in: channelIds } },
-          { $set: { status: 'Sold', sold: true } }
-        );
+        const channelIds = transaction.metadata.cartItems
+          .filter(item => !item.itemType || item.itemType === 'channel')
+          .map(item => item.id);
+
+        if (channelIds.length > 0) {
+          await YouTubeChannel.updateMany(
+            { _id: { $in: channelIds } },
+            { $set: { status: 'Sold', sold: true } }
+          );
+        }
       } catch (err) {
         console.error('Failed to update channel status:', err);
       }

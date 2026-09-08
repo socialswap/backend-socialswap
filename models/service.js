@@ -13,6 +13,8 @@ const serviceSchema = new mongoose.Schema({
   description: { type: String, required: true, trim: true },
   faq:         { type: [faqSchema], default: [] },
   images:      { type: [String], default: [] },
+  pdfUrl:      { type: String, default: '', trim: true },
+  pdfTitle:    { type: String, default: '', trim: true },
   isActive:    { type: Boolean, default: true },
   sortOrder:   { type: Number, default: 0 },
 }, {

@@ -167,8 +167,8 @@ router.post('/contact', sendContactEmail);
 
 // Services — admin
 router.get('/admin/services', auth, getAdminServices);
-router.post('/admin/services', auth, upload.array('images', 8), createService);
-router.put('/admin/services/:id', auth, upload.array('images', 8), updateService);
+router.post('/admin/services', auth, upload.any(), createService);
+router.put('/admin/services/:id', auth, upload.any(), updateService);
 router.delete('/admin/services/:id', auth, deleteService);
 
 // Push Notifications

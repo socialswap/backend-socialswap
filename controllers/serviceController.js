@@ -28,7 +28,7 @@ exports.getAllServices = async (req, res) => {
     if (category && category !== 'all') query.category = category;
 
     const services = await Service.find(query)
-      .select('serviceName slug category price description images createdAt sortOrder')
+      .select('serviceName slug category price description images pdfUrl pdfTitle createdAt sortOrder')
       .sort({ sortOrder: 1, createdAt: -1 });
 
     // Unique categories list for filter
@@ -71,11 +71,11 @@ exports.getAdminServices = async (req, res) => {
 
 /**
  * POST /admin/services
- * Create a new service, upload images to R2 (images already webp from client)
+ * Create a new service, upload images and PDF to R2
  */
 exports.createService = async (req, res) => {
   try {
-    let { serviceName, category, price, description, faq, sortOrder, isActive } = req.body;
+    let { serviceName, category, price, description, faq, sortOrder, isActive, pdfTitle, pdfUrl: bodyPdfUrl } = req.body;
 
     // Parse JSON fields sent as strings from FormData
     if (typeof faq === 'string') faq = JSON.parse(faq || '[]');
@@ -88,18 +88,24 @@ exports.createService = async (req, res) => {
     const baseSlug = serviceName.toLowerCase().trim().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-');
     const slug = await uniqueSlug(baseSlug);
 
-    // Upload images to R2
+    // Upload files to R2
     const imageUrls = [];
+    let pdfUrl = bodyPdfUrl || '';
+
     if (req.files && req.files.length > 0) {
       for (const file of req.files) {
-        const url = await uploadToR2(file.buffer, file.originalname, file.mimetype);
-        imageUrls.push(url);
+        if (file.fieldname === 'pdfFile' || file.fieldname === 'pdf' || file.mimetype === 'application/pdf' || file.originalname.endsWith('.pdf')) {
+          pdfUrl = await uploadToR2(file.buffer, file.originalname, file.mimetype || 'application/pdf');
+        } else {
+          const url = await uploadToR2(file.buffer, file.originalname, file.mimetype);
+          imageUrls.push(url);
+        }
       }
     }
 
     const service = await Service.create({
       serviceName, slug, category, price, description, faq: faq || [],
-      images: imageUrls, sortOrder, isActive
+      images: imageUrls, pdfUrl, pdfTitle: pdfTitle || '', sortOrder, isActive
     });
 
     res.status(201).json({ success: true, service });
@@ -111,14 +117,14 @@ exports.createService = async (req, res) => {
 
 /**
  * PUT /admin/services/:id
- * Update service — handles image add/remove, re-generates slug if name changes
+ * Update service — handles image & PDF add/remove, re-generates slug if name changes
  */
 exports.updateService = async (req, res) => {
   try {
     const service = await Service.findById(req.params.id);
     if (!service) return res.status(404).json({ success: false, message: 'Service not found' });
 
-    let { serviceName, category, price, description, faq, sortOrder, isActive, removedImages } = req.body;
+    let { serviceName, category, price, description, faq, sortOrder, isActive, removedImages, pdfTitle, deletePdf, pdfUrl: bodyPdfUrl } = req.body;
 
     if (typeof faq === 'string') faq = JSON.parse(faq || '[]');
     if (typeof removedImages === 'string') removedImages = JSON.parse(removedImages || '[]');
@@ -133,11 +139,29 @@ exports.updateService = async (req, res) => {
       service.images = service.images.filter(img => !removedImages.includes(img));
     }
 
-    // Upload new images
+    // Delete existing PDF from R2 if requested
+    if (deletePdf === 'true' && service.pdfUrl) {
+      await deleteFromR2(service.pdfUrl);
+      service.pdfUrl = '';
+    }
+
+    // Direct PDF URL override
+    if (bodyPdfUrl !== undefined && !deletePdf) {
+      service.pdfUrl = bodyPdfUrl;
+    }
+
+    // Upload new files
     if (req.files && req.files.length > 0) {
       for (const file of req.files) {
-        const url = await uploadToR2(file.buffer, file.originalname, file.mimetype);
-        service.images.push(url);
+        if (file.fieldname === 'pdfFile' || file.fieldname === 'pdf' || file.mimetype === 'application/pdf' || file.originalname.endsWith('.pdf')) {
+          if (service.pdfUrl) {
+            await deleteFromR2(service.pdfUrl);
+          }
+          service.pdfUrl = await uploadToR2(file.buffer, file.originalname, file.mimetype || 'application/pdf');
+        } else {
+          const url = await uploadToR2(file.buffer, file.originalname, file.mimetype);
+          service.images.push(url);
+        }
       }
     }
 
@@ -154,6 +178,7 @@ exports.updateService = async (req, res) => {
     if (faq !== undefined) service.faq = faq;
     if (sortOrder !== undefined) service.sortOrder = sortOrder;
     if (isActive !== undefined) service.isActive = isActive;
+    if (pdfTitle !== undefined) service.pdfTitle = pdfTitle;
 
     await service.save();
     res.json({ success: true, service });
@@ -165,7 +190,7 @@ exports.updateService = async (req, res) => {
 
 /**
  * DELETE /admin/services/:id
- * Hard delete — removes from DB and deletes all R2 images
+ * Hard delete — removes from DB and deletes all R2 images & PDF
  */
 exports.deleteService = async (req, res) => {
   try {
@@ -175,6 +200,11 @@ exports.deleteService = async (req, res) => {
     // Delete all images from R2
     if (service.images && service.images.length > 0) {
       await Promise.all(service.images.map(url => deleteFromR2(url)));
+    }
+
+    // Delete PDF from R2
+    if (service.pdfUrl) {
+      await deleteFromR2(service.pdfUrl);
     }
 
     await Service.findByIdAndDelete(req.params.id);
