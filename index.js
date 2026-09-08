@@ -279,6 +279,8 @@ io.on('connection', (socket) => {
                   }
                 });
               }
+            } catch(err) { console.error('Push error (user loop):', err); }
+
             // Send email notification to the user so they get notified even when offline
             try {
               const recipientUser = await require('./models/user').findById(otherParticipant);
