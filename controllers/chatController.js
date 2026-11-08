@@ -1,7 +1,43 @@
+const mongoose = require('mongoose');
 const Conversation = require('../models/chat');
 const Message = require('../models/message');
 const User = require('../models/user');
 const { uploadToR2 } = require('../config/r2');
+
+const MESSAGE_PAGE_SIZE = 50;
+
+// Everything a chat bubble shows. Passing them together lets Mongoose fetch them in parallel.
+const MESSAGE_POPULATE = [
+  { path: 'sender', select: 'name avatar role' },
+  { path: 'dealId', populate: { path: 'channel', select: 'name price bannerUrl' } },
+  { path: 'channelId', select: 'name price category subscriberCount imageUrls customUrl' },
+  { path: 'reactions.user', select: 'name avatar' },
+  { path: 'replyTo', populate: { path: 'sender', select: 'name' } }
+];
+
+/**
+ * Returns the newest messages first-page-style, like WhatsApp: the latest 50,
+ * or the 50 before `before` (a message id) when the user scrolls up.
+ * Message ids grow over time, so they work as a stable cursor.
+ */
+const loadMessages = async (conversationId, query = {}) => {
+  const limit = Math.min(Math.max(parseInt(query.limit, 10) || MESSAGE_PAGE_SIZE, 1), 100);
+  const filter = { conversationId };
+  if (query.before && mongoose.Types.ObjectId.isValid(String(query.before))) {
+    filter._id = { $lt: new mongoose.Types.ObjectId(String(query.before)) };
+  }
+
+  const page = await Message.find(filter)
+    .sort({ _id: -1 })
+    .limit(limit + 1)
+    .populate(MESSAGE_POPULATE)
+    .lean();
+
+  const hasMore = page.length > limit;
+  return { messages: page.slice(0, limit).reverse(), hasMore };
+};
+
+exports.MESSAGE_POPULATE = MESSAGE_POPULATE;
 
 // Fetch chat conversation for a user (or create if it doesn't exist)
 exports.getChatThread = async (req, res) => {
@@ -18,18 +54,9 @@ exports.getChatThread = async (req, res) => {
       conversation = await Conversation.findById(conversation._id).populate('participants', 'name email avatar role');
     }
     
-    const messages = await Message.find({ conversationId: conversation._id })
-      .populate('sender', 'name avatar role')
-      .populate({
-        path: 'dealId',
-        populate: { path: 'channel', select: 'name price bannerUrl' }
-      })
-      .populate('channelId', 'name price category subscriberCount imageUrls customUrl')
-      .populate('reactions.user', 'name avatar')
-      .populate('replyTo')
-      .sort({ createdAt: 1 });
-    
-    res.status(200).json({ success: true, thread: conversation, messages });
+    const { messages, hasMore } = await loadMessages(conversation._id, req.query);
+
+    res.status(200).json({ success: true, thread: conversation, messages, hasMore });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -57,18 +84,9 @@ exports.getThreadById = async (req, res) => {
       
     if (!conversation) return res.status(404).json({ success: false, message: 'Thread not found' });
     
-    const messages = await Message.find({ conversationId: conversation._id })
-      .populate('sender', 'name avatar role')
-      .populate({
-        path: 'dealId',
-        populate: { path: 'channel', select: 'name price bannerUrl' }
-      })
-      .populate('channelId', 'name price category subscriberCount imageUrls customUrl')
-      .populate('reactions.user', 'name avatar')
-      .populate('replyTo')
-      .sort({ createdAt: 1 });
-    
-    res.status(200).json({ success: true, thread: conversation, messages });
+    const { messages, hasMore } = await loadMessages(conversation._id, req.query);
+
+    res.status(200).json({ success: true, thread: conversation, messages, hasMore });
   }catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -87,18 +105,9 @@ exports.getThreadByUserId = async (req, res) => {
       conversation = await Conversation.findById(conversation._id).populate('participants', 'name email avatar role');
     }
     
-    const messages = await Message.find({ conversationId: conversation._id })
-      .populate('sender', 'name avatar role')
-      .populate({
-        path: 'dealId',
-        populate: { path: 'channel', select: 'name price bannerUrl' }
-      })
-      .populate('channelId', 'name price category subscriberCount imageUrls customUrl')
-      .populate('reactions.user', 'name avatar')
-      .populate('replyTo')
-      .sort({ createdAt: 1 });
-    
-    res.status(200).json({ success: true, thread: conversation, messages });
+    const { messages, hasMore } = await loadMessages(conversation._id, req.query);
+
+    res.status(200).json({ success: true, thread: conversation, messages, hasMore });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
