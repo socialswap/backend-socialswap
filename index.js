@@ -172,6 +172,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const Conversation = require('./models/chat');
 const Message = require('./models/message');
+const { MESSAGE_POPULATE } = require('./controllers/chatController');
 
 const server = http.createServer(app);
 const io = new Server(server, {
@@ -223,17 +224,11 @@ io.on('connection', (socket) => {
         });
         await newMessage.save();
 
-        thread.lastMessage = newMessage._id;
-        await thread.save();
-
-        await newMessage.populate('sender', 'name avatar role');
-        await newMessage.populate({
-          path: 'dealId',
-          populate: { path: 'channel', select: 'name price bannerUrl' }
-        });
-        await newMessage.populate('channelId', 'name price category subscriberCount imageUrls customUrl');
-        await newMessage.populate('replyTo');
-        await newMessage.populate('reactions.user', 'name avatar');
+        // Done together: each database trip is slow, and the bubble shows only after both
+        await Promise.all([
+          newMessage.populate(MESSAGE_POPULATE),
+          Conversation.updateOne({ _id: thread._id }, { lastMessage: newMessage._id })
+        ]);
 
         io.to(threadId).emit('receive_message', newMessage);
 
@@ -375,9 +370,8 @@ io.on('connection', (socket) => {
           msg.reactions.push({ user: userId, reaction });
         }
         await msg.save();
-        await msg.populate('sender', 'name avatar role');
-        await msg.populate('reactions.user', 'name avatar');
-        await msg.populate('replyTo');
+        // Same fields as a fresh message, so a deal or channel card keeps its details
+        await msg.populate(MESSAGE_POPULATE);
         io.to(msg.conversationId.toString()).emit('message_updated', msg);
       }
     } catch (error) {
