@@ -48,5 +48,8 @@ const EscrowDealSchema = new mongoose.Schema({
   }
 }, { timestamps: true });
 
+EscrowDealSchema.index({ buyer: 1, createdAt: -1 });
+EscrowDealSchema.index({ seller: 1, createdAt: -1 });
+
 const EscrowDeal = mongoose.model('EscrowDeal', EscrowDealSchema);
 module.exports = EscrowDeal;

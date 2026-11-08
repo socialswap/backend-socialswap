@@ -5,6 +5,9 @@ const path = require('path');
 const { uploadToR2, deleteFromR2 } = require('../config/r2');
 
 
+// Listing cards don't need these fields, and seller contact details must not be public
+const LIST_EXCLUDED_FIELDS = '-description -contactInfo -paymentId -buyer -seller -seoKeywords -metaTitle -metaDescription -__v';
+
 // Place an order
 exports.placeOrder = async (req, res) => {
   try {
@@ -199,6 +202,7 @@ exports.getChannels = async (req, res) => {
     // Execute query
     const [channels, total] = await Promise.all([
       YouTubeChannel.find(query)
+        .select(LIST_EXCLUDED_FIELDS)
         .sort(sortOption)
         .skip(skip)
         .limit(limit)
@@ -206,15 +210,12 @@ exports.getChannels = async (req, res) => {
       YouTubeChannel.countDocuments(query)
     ]);
 
-    console.log('Applied Query:', JSON.stringify(query, null, 2));
-
     res.json({
       success: true,
       channels,
       currentPage: page,
       totalPages: Math.ceil(total / limit),
-      totalChannels: total,
-      filters: query // For debugging
+      totalChannels: total
     });
 
   } catch (error) {
@@ -261,14 +262,17 @@ exports.getChannelByUsername = async (req, res) => {
 
 exports.demandingChannel = async (req, res) => {
   try {
-    const limit = parseInt(req.query.limit) || 20;
+    const limit = Math.min(100, parseInt(req.query.limit) || 20);
     const updatedChannel = await YouTubeChannel.find({
       mostDemanding: true,
-      status: { $ne: 'sold' }, // Exclude sold channels
+      status: { $in: ['Available', 'approved'] },
+      sold: { $ne: true },
       isHidden: { $ne: true }  // Exclude admin-hidden channels
     })
+      .select(LIST_EXCLUDED_FIELDS)
       .sort({ createdAt: -1 })
-      .limit(limit);
+      .limit(limit)
+      .lean();
 
     res.json(updatedChannel);
   } catch (error) {

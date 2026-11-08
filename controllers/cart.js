@@ -15,35 +15,34 @@ exports.getCart = async (req, res) => {
     }
 
     let itemsToRemove = [];
-    const channels = await Promise.all(
-      cart?.items?.map(async (item) => {
-        try {
-          const channel = await YouTubeChannel.findById(item.channel);
-            console.log(channel);
-            
-          // If channel not found or status is sold, mark for removal
-          if (!channel || channel.status === 'Sold') {
-            itemsToRemove.push(item._id);
-            return null;
-          }
-          
-          return {
-            _id: channel._id,
-            name: channel.name,
-            avatarUrl: channel.avatarUrl,
-            logoUrl: channel.logoUrl || channel.bannerUrl || channel.imageUrls?.[0] || '',
-            bannerUrl: channel.bannerUrl,
-            category: channel.category,
-            price: channel.soldPrice || channel.price,
-            quantity: item.quantity,
-            status: channel.status
-          };
-        } catch (error) {
-          console.error(`Error fetching channel for item ${item._id}:`, error);
-          return null;
-        }
-      })
-    );
+    const cartChannels = await YouTubeChannel.find({
+      _id: { $in: cart.items.map(item => item.channel) }
+    })
+      .select('name avatarUrl logoUrl bannerUrl imageUrls category soldPrice price status')
+      .lean();
+    const channelsById = new Map(cartChannels.map(channel => [channel._id.toString(), channel]));
+
+    const channels = cart.items.map((item) => {
+      const channel = channelsById.get(item.channel.toString());
+
+      // If channel not found or status is sold, mark for removal
+      if (!channel || channel.status === 'Sold') {
+        itemsToRemove.push(item._id);
+        return null;
+      }
+
+      return {
+        _id: channel._id,
+        name: channel.name,
+        avatarUrl: channel.avatarUrl,
+        logoUrl: channel.logoUrl || channel.bannerUrl || channel.imageUrls?.[0] || '',
+        bannerUrl: channel.bannerUrl,
+        category: channel.category,
+        price: channel.soldPrice || channel.price,
+        quantity: item.quantity,
+        status: channel.status
+      };
+    });
 
     // If there are items to remove, update the cart
     if (itemsToRemove.length > 0) {
@@ -69,8 +68,9 @@ exports.getCart = async (req, res) => {
 
     // Filter out null channels and remove duplicates
     const validChannels = channels?.filter(channel => channel !== null);
-    const uniqueChannels = Array.from(new Set(validChannels?.map(c => c._id)))
-      .map(_id => validChannels.find(c => c._id === _id));
+    const uniqueChannels = Array.from(
+      new Map(validChannels.map(channel => [channel._id.toString(), channel])).values()
+    );
 
     // Respond with the array of unique channels and removal info
     res.json({

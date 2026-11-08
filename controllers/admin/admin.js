@@ -104,7 +104,9 @@ router.get('/admin/transactions', auth, async (req, res) => {
           ...transaction.metadata,
           cartItems
         },
-        phonepeResponse: normalizedPhonePe
+        gatewayDetails: transaction.gatewayDetails || null,
+        razorpayOrderId: transaction.razorpayOrderId || null,
+        phonepeResponse: transaction.phonepeResponse ? normalizedPhonePe : null
       };
     });
 

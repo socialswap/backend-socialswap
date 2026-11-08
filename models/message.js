@@ -59,5 +59,8 @@ const MessageSchema = new mongoose.Schema({
   }
 }, { timestamps: true });
 
+MessageSchema.index({ conversationId: 1, createdAt: 1 }); // load a thread
+MessageSchema.index({ read: 1, sender: 1 }); // unread counts
+
 const Message = mongoose.model('Message', MessageSchema);
 module.exports = Message;

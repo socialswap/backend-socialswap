@@ -27,12 +27,14 @@ exports.getAllServices = async (req, res) => {
     const query = { isActive: true };
     if (category && category !== 'all') query.category = category;
 
-    const services = await Service.find(query)
-      .select('serviceName slug category price description images pdfUrl pdfTitle createdAt sortOrder')
-      .sort({ sortOrder: 1, createdAt: -1 });
-
-    // Unique categories list for filter
-    const categories = await Service.distinct('category', { isActive: true });
+    // Run together so the page waits for one database round trip, not two
+    const [services, categories] = await Promise.all([
+      Service.find(query)
+        .select('serviceName slug category price description images pdfUrl pdfTitle createdAt sortOrder')
+        .sort({ sortOrder: 1, createdAt: -1 })
+        .lean(),
+      Service.distinct('category', { isActive: true })
+    ]);
 
     res.json({ success: true, services, categories });
   } catch (err) {

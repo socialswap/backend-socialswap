@@ -41,7 +41,21 @@ const TransactionSchema = new mongoose.Schema({
     default: 'INITIATED'
   },
   
-  // PhonePe Specific Details
+  // Razorpay Details
+  razorpayOrderId: {
+    type: String,
+    index: true,
+    sparse: true
+  },
+  razorpayPaymentId: {
+    type: String
+  },
+  gatewayDetails: {
+    type: mongoose.Schema.Types.Mixed,
+    default: null
+  },
+
+  // Kept so older PhonePe transactions still display correctly
   phonepeResponse: {
     type: mongoose.Schema.Types.Mixed,
     default: null
@@ -50,7 +64,7 @@ const TransactionSchema = new mongoose.Schema({
   // Payment Method Details
   paymentMethod: {
     type: String,
-    enum: ['PHONEPE', 'CREDIT_CARD', 'DEBIT_CARD', 'NET_BANKING', 'UPI']
+    enum: ['RAZORPAY', 'PHONEPE', 'CREDIT_CARD', 'DEBIT_CARD', 'NET_BANKING', 'UPI']
   },
   
   // Associated Order Details
@@ -113,12 +127,11 @@ TransactionSchema.statics.createTransaction = async function(data) {
       amount: data.amount,
       status: 'INITIATED',
       phonepeResponse: data.phonepeResponse || null,
-      paymentMethod: 'PHONEPE',
+      paymentMethod: data.paymentMethod || 'RAZORPAY',
+      razorpayOrderId: data.razorpayOrderId,
       metadata: data.metadata || {},
       currency: data.currency || 'INR'
     });
-
-    console.log('Creating transaction:', transaction);
 
     return await transaction.save();
   } catch (error) {
@@ -193,6 +206,9 @@ TransactionSchema.methods.updateTransactionStatus = async function(status, phone
     throw error;
   }
 };
+
+// Serves GET /transactions and GET /orders
+TransactionSchema.index({ user: 1, createdAt: -1 });
 
 const Transaction = mongoose.model('Transaction', TransactionSchema);
 
