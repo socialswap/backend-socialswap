@@ -153,19 +153,21 @@ exports.getAllUsers = async (req, res) => {
     const users = await User.find().select('-password').lean();
     
     const YouTubeChannel = require('../models/channel');
-    const usersWithChannelCount = await Promise.all(
-      users.map(async (user) => {
-        const channelCount = await YouTubeChannel.countDocuments({
-          $or: [
-            { createdBy: user._id },
-            { seller: user._id.toString() }
-          ]
-        });
-        return { ...user, channelCount };
-      })
-    );
-    
-    res.json(usersWithChannelCount);
+    // One query for all counts instead of one query per user
+    const channelCounts = await YouTubeChannel.aggregate([
+      {
+        $group: {
+          _id: { $ifNull: [{ $toString: '$createdBy' }, '$seller'] },
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+    const countsByUser = new Map(channelCounts.map(({ _id, count }) => [_id, count]));
+
+    res.json(users.map(user => ({
+      ...user,
+      channelCount: countsByUser.get(user._id.toString()) || 0
+    })));
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });

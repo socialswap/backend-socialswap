@@ -26,6 +26,7 @@ const cacheControl = (seconds) => (req, res, next) => {
   next();
 };
 const { uploadToR2 } = require('./config/r2');
+const { clearCacheOnWrite } = require('./middleware/responseCache');
 
 const corsOptions = {
 
@@ -91,7 +92,12 @@ app.use((req, res, next) => {
 });
 
 // Middleware for parsing JSON bodies
-app.use(express.json());
+// The Razorpay webhook signature must be checked against the exact bytes received
+app.use(express.json({
+  verify: (req, res, buf) => {
+    if (req.originalUrl.startsWith('/api/payment/webhook')) req.rawBody = buf;
+  }
+}));
 
 
 // Image upload route
@@ -155,6 +161,7 @@ Sitemap: https://www.socialswap.in/sitemap.xml`);
 });
 
 // Route for handling API requests
+app.use('/api', clearCacheOnWrite);
 app.use('/api', youtubeChannelRoutes);
 app.use('/api', payment);
 app.use('/api', admin);

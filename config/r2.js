@@ -50,6 +50,8 @@ const uploadToR2 = async (fileBuffer, originalName, mimeType) => {
       Key: key,
       Body: fileBuffer,
       ContentType: mimeType,
+      // File names are unique, so a stored file never changes
+      CacheControl: 'public, max-age=31536000, immutable',
     };
 
     const client = getS3Client();

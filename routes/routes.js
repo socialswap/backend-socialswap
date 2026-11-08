@@ -17,6 +17,7 @@ const {
 } = require('../controllers/channelController');
 const router = express.Router();
 const auth = require('../middleware/auth');
+const { responseCache } = require('../middleware/responseCache');
 
 // Cache-control middleware for public routes
 const cache = (seconds) => (req, res, next) => {
@@ -61,10 +62,10 @@ const validateImageCount = (req, res, next) => {
 };
 router.get('/', (req,res)=> res.status(200).json({message:'success'}));
 // Channels — public routes with caching
-router.get('/channels/demanding', cache(300), demandingChannel);  // 5 min cache
-router.get('/channels', cache(300), getChannels);                  // 5 min cache
+router.get('/channels/demanding', cache(300), responseCache(300), demandingChannel);  // 5 min cache
+router.get('/channels', cache(300), responseCache(300), getChannels);                  // 5 min cache
 router.post('/channels/filter', getChannels);                      // POST route for body filters
-router.get('/channels/username/:username', cache(300), getChannelByUsername); // fetch by username/slug
+router.get('/channels/username/:username', cache(300), responseCache(300), getChannelByUsername); // fetch by username/slug
 router.get('/channels/:id', cache(300), getChannel);               // 5 min cache (kept for backward compat)
 router.post('/auth/signup',signup);
 router.post('/auth/login', login);
@@ -129,7 +130,7 @@ router.delete('/users/:userId', auth, deleteUser);
 router.get('/sitemap.xml', getSitemap);
 
 // Blogs — public routes with caching
-router.get('/blogs', cache(3600), getBlogs);       // 1 hour cache
+router.get('/blogs', cache(3600), responseCache(300), getBlogs);       // 1 hour cache
 router.get('/blogs/:id', cache(1800), getBlog);    // 30 min cache
 router.post('/blogs/:id/views', incrementBlogViews);
 router.get('/admin/blogs', auth, getAllBlogs);
@@ -159,8 +160,8 @@ router.patch('/deals/:id/status', auth, updateDealStatus);
 router.get('/deals', auth, getUserDeals);
 
 // Services — public
-router.get('/services', getAllServices);
-router.get('/services/:slug', getServiceBySlug);
+router.get('/services', cache(60), responseCache(300), getAllServices);
+router.get('/services/:slug', cache(60), responseCache(300), getServiceBySlug);
 
 // Contact Form
 router.post('/contact', sendContactEmail);
@@ -176,7 +177,7 @@ router.post('/push/subscribe', auth, subscribe);
 router.post('/push/unsubscribe', auth, unsubscribe);
 
 // Testimonials
-router.get('/testimonials', cache(3600), getTestimonials); // 1 hour cache for public
+router.get('/testimonials', cache(3600), responseCache(300), getTestimonials); // 1 hour cache for public
 router.get('/admin/testimonials', auth, getTestimonials); // No cache for admin
 router.post('/admin/testimonials', auth, createTestimonial);
 router.put('/admin/testimonials/:id', auth, updateTestimonial);
@@ -185,7 +186,7 @@ router.post('/admin/testimonials/upload-image', auth, upload.single('image'), up
 router.delete('/admin/testimonials/delete-image', auth, deleteTestimonialImage);
 
 // Home Video
-router.get('/home-video', getHomeVideo);
+router.get('/home-video', cache(60), responseCache(300), getHomeVideo);
 router.put('/admin/home-video', auth, updateHomeVideo);
 
 module.exports = router;
