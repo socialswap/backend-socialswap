@@ -10,14 +10,7 @@ const order = require('./controllers/orders')
 const app = express();
 const path = require('path');
 const multer = require('multer');
-const webpush = require('web-push');
-const PushSubscription = require('./models/pushSubscription');
-
-webpush.setVapidDetails(
-  process.env.VAPID_SUBJECT || 'mailto:admin@socialswap.com',
-  process.env.VAPID_PUBLIC_KEY,
-  process.env.VAPID_PRIVATE_KEY
-);
+const { sendPushToUsers, sendPushToAdmins } = require('./utils/push');
 connectDB();
 
 // Cache control helper
@@ -206,20 +199,21 @@ io.on('connection', (socket) => {
   // Handle incoming messages
   socket.on('send_message', async (data) => {
     try {
-      const { threadId, sender, text, imageUrl, isDealCard, dealId, isChannelCard, channelId, replyTo } = data;
+      const { threadId, sender, text, imageUrl, isDealCard, dealId, isChannelCard, channelId, isServiceCard, serviceId, replyTo } = data;
       
       const thread = await Conversation.findById(threadId);
       if (thread) {
         const newMessage = new Message({
           conversationId: threadId,
           sender,
-          type: isDealCard ? 'deal' : isChannelCard ? 'channel' : imageUrl ? 'image' : 'text',
+          type: isDealCard ? 'deal' : isChannelCard ? 'channel' : isServiceCard ? 'service' : imageUrl ? 'image' : 'text',
           text,
           mediaUrl: imageUrl,
           isDeal: isDealCard || false,
           dealId,
           isChannel: isChannelCard || false,
           channelId,
+          serviceId: isServiceCard ? serviceId : undefined,
           replyTo: replyTo || null
         });
         await newMessage.save();
@@ -235,53 +229,24 @@ io.on('connection', (socket) => {
         if (newMessage.sender.role !== 'admin') {
           io.to('admins').emit('global_notification', { threadId: thread._id, message: newMessage });
           
-          // Send push to admins
-          try {
-            const adminUsers = await require('./models/user').find({ role: 'admin' });
-            const adminIds = adminUsers.map(a => a._id);
-            const subscriptions = await PushSubscription.find({ userId: { $in: adminIds } });
-            
-            const payload = JSON.stringify({
-              title: `New message from ${newMessage.sender.name}`,
-              body: newMessage.text || (newMessage.mediaUrl ? 'Sent an image' : 'Sent an update'),
-              url: `/admin/chats` // Redirect URL for admin
-            });
-            
-            for (let sub of subscriptions) {
-              const pushSub = { endpoint: sub.endpoint, keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth } };
-              webpush.sendNotification(pushSub, payload).catch(err => {
-                console.error('Webpush to admin error:', err.statusCode, err.body || err);
-                if (err.statusCode === 410) {
-                  PushSubscription.deleteOne({ _id: sub._id }).exec();
-                }
-              });
-            }
-          } catch(err) { console.error('Push error (admin loop):', err); }
+          sendPushToAdmins({
+            title: `New message from ${newMessage.sender.name || 'a user'}`,
+            body: newMessage.text || (newMessage.mediaUrl ? 'Sent an image' : 'Sent an update'),
+            url: `/admin/chats`,
+            tag: 'socialswap-chat'
+          });
 
         } else {
           const otherParticipant = thread.participants.find(p => p.toString() !== sender.toString());
           if (otherParticipant) {
             io.to(`user_${otherParticipant.toString()}`).emit('global_notification', { threadId: thread._id, message: newMessage });
             
-            // Send push to the user
-            try {
-              const subscriptions = await PushSubscription.find({ userId: otherParticipant });
-              const payload = JSON.stringify({
-                title: `New message from Admin`,
-                body: newMessage.text || (newMessage.mediaUrl ? 'Sent an image' : 'Sent an update'),
-                url: `/user/chat` // Redirect URL for user
-              });
-              
-              for (let sub of subscriptions) {
-                const pushSub = { endpoint: sub.endpoint, keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth } };
-                webpush.sendNotification(pushSub, payload).catch(err => {
-                  console.error('Webpush to user error:', err.statusCode, err.body || err);
-                  if (err.statusCode === 410) {
-                    PushSubscription.deleteOne({ _id: sub._id }).exec();
-                  }
-                });
-              }
-            } catch(err) { console.error('Push error (user loop):', err); }
+            sendPushToUsers(otherParticipant, {
+              title: 'New message from SocialSwap Support',
+              body: newMessage.text || (newMessage.mediaUrl ? 'Sent an image' : 'Sent an update'),
+              url: `/user/chat`,
+              tag: 'socialswap-chat'
+            });
 
             // Send email notification to the user so they get notified even when offline
             try {

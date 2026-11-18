@@ -11,6 +11,7 @@ const YouTubeChannel = require('../models/channel');
 const EscrowDeal = require('../models/deal');
 const User = require('../models/user');
 const { sendMailWithLogo } = require('../utils/mailer');
+const { sendPushToAdmins } = require('../utils/push');
 
 const CURRENCY = 'INR';
 const MIN_AMOUNT_RUPEES = 1; // Razorpay's minimum order value
@@ -78,6 +79,33 @@ const sendPaymentSuccessEmail = async (transaction) => {
   }
 };
 
+// Tells every admin device that money came in. Runs once per payment (see applyPaymentOutcome).
+const notifyAdminsOfPayment = async (transaction) => {
+  try {
+    const buyer = await User.findById(transaction.user).select('name email').lean().catch(() => null);
+    const { dealId, cartItems } = transaction.metadata || {};
+
+    let item = 'an order';
+    if (dealId) {
+      const deal = await EscrowDeal.findById(dealId).populate('channel', 'name').lean().catch(() => null);
+      item = `escrow deal${deal?.channel?.name ? ` for ${deal.channel.name}` : ''}`;
+    } else if (cartItems?.length) {
+      const first = cartItems[0]?.name || (cartItems[0]?.itemType === 'service' ? 'a service' : 'a channel');
+      item = cartItems.length > 1 ? `${first} + ${cartItems.length - 1} more` : first;
+    }
+
+    await sendPushToAdmins({
+      title: `💰 Payment received: ₹${Number(transaction.amount).toLocaleString('en-IN')}`,
+      body: `${buyer?.name || buyer?.email || 'A user'} paid for ${item}.`,
+      url: '/admin/dashboard?tab=transactions',
+      tag: `payment-${transaction._id}`,
+      alwaysShow: true
+    });
+  } catch (err) {
+    console.error('Payment push failed:', err.message);
+  }
+};
+
 // Marks the escrow deal paid, or the purchased cart channels sold.
 const fulfilTransaction = async (transaction) => {
   const { dealId, cartItems } = transaction.metadata || {};
@@ -135,6 +163,7 @@ const applyPaymentOutcome = async (transaction, status, payment) => {
   if (status === 'SUCCESS') {
     await fulfilTransaction(updated);
     await sendPaymentSuccessEmail(updated);
+    notifyAdminsOfPayment(updated);
   } else if (updated.metadata?.dealId) {
     try {
       await EscrowDeal.updateOne(

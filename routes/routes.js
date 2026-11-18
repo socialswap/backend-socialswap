@@ -35,7 +35,7 @@ const { upload, createChannel } = require('../middleware/multer');
 const { createBlog, updateBlog, deleteBlog, getBlogs, getAllBlogs, getBlog, incrementBlogViews, uploadBlogImage, deleteBlogImage } = require('../controllers/blogs');
 const { getSitemap } = require('../controllers/sitemapController');
 const { getChannelInfo } = require('../controllers/youtubeController');
-const { getChatThread, getAllThreads, getThreadById, getThreadByUserId, uploadChatImage, getUnreadCount } = require('../controllers/chatController');
+const { getChatThread, getAllThreads, getThreadById, getThreadByUserId, uploadChatImage, getUnreadCount, saveChatPhone, requireAdmin: requireChatAdmin } = require('../controllers/chatController');
 const { createDeal, updateDealStatus, getAllDeals, getUserDeals, updateDealPaymentStatus } = require('../controllers/dealController');
 const { getAllServices, getServiceBySlug, getAdminServices, createService, updateService, deleteService } = require('../controllers/serviceController');
 const { subscribe, unsubscribe } = require('../controllers/pushController');
@@ -148,9 +148,10 @@ router.get('/youtube/channel-info', auth, getChannelInfo);
 router.get('/chat', auth, getChatThread);
 router.get('/chat/unread', auth, getUnreadCount); // Unread count
 router.post('/chat/upload', auth, upload.single('image'), uploadChatImage);
-router.get('/admin/chats', auth, getAllThreads);
-router.get('/admin/chats/:threadId', auth, getThreadById);
-router.get('/admin/chats/user/:userId', auth, getThreadByUserId);
+router.put('/chat/phone', auth, saveChatPhone);
+router.get('/admin/chats', auth, requireChatAdmin, getAllThreads);
+router.get('/admin/chats/:threadId', auth, requireChatAdmin, getThreadById);
+router.get('/admin/chats/user/:userId', auth, requireChatAdmin, getThreadByUserId);
 
 // Deals
 router.post('/admin/deals', auth, createDeal);

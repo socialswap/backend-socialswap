@@ -11,6 +11,7 @@ const MESSAGE_POPULATE = [
   { path: 'sender', select: 'name avatar role' },
   { path: 'dealId', populate: { path: 'channel', select: 'name price bannerUrl' } },
   { path: 'channelId', select: 'name price category subscriberCount imageUrls customUrl' },
+  { path: 'serviceId', select: 'serviceName slug price category images' },
   { path: 'reactions.user', select: 'name avatar' },
   { path: 'replyTo', populate: { path: 'sender', select: 'name' } }
 ];
@@ -39,19 +40,66 @@ const loadMessages = async (conversationId, query = {}) => {
 
 exports.MESSAGE_POPULATE = MESSAGE_POPULATE;
 
+// mobile lets the buyer's chat know whether to ask for a number, and lets admins call them.
+// Only the buyer's own thread and the admin-only routes return it.
+const PARTICIPANT_FIELDS = 'name email avatar role mobile';
+
+/**
+ * Accepts what people actually type ("98765 43210", "+91-98765-43210", "098765...")
+ * and returns "+<country><number>", or null. A bare 10-digit number is taken as Indian.
+ */
+const normalizePhone = (input) => {
+  const raw = String(input || '').trim();
+  let digits = raw.replace(/\D/g, '');
+  if (raw.startsWith('00')) digits = digits.slice(2);
+  else if (!raw.startsWith('+') && digits.length === 11 && digits.startsWith('0')) digits = digits.slice(1);
+
+  if (!raw.startsWith('+') && !raw.startsWith('00') && digits.length === 10) {
+    return /^[6-9]/.test(digits) ? `+91${digits}` : null;
+  }
+  if (digits.startsWith('91') && digits.length === 12) {
+    return /^[6-9]/.test(digits.slice(2)) ? `+${digits}` : null;
+  }
+  return digits.length >= 8 && digits.length <= 15 ? `+${digits}` : null;
+};
+
+// Buyer saves the number support can call them on
+exports.saveChatPhone = async (req, res) => {
+  try {
+    const phone = normalizePhone(req.body?.phone);
+    if (!phone) {
+      return res.status(400).json({ success: false, message: 'Please enter a valid mobile number.' });
+    }
+    const userId = req.user.userId || req.user._id;
+    const user = await User.findByIdAndUpdate(userId, { mobile: phone }, { new: true }).select('mobile');
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+    res.status(200).json({ success: true, mobile: user.mobile });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Could not save the number. Please try again.' });
+  }
+};
+
+// Admin chat routes return every buyer's messages and phone number
+exports.requireAdmin = (req, res, next) => {
+  if (req.user?.role !== 'admin') {
+    return res.status(403).json({ success: false, message: 'Admin access required' });
+  }
+  next();
+};
+
 // Fetch chat conversation for a user (or create if it doesn't exist)
 exports.getChatThread = async (req, res) => {
   try {
     const userId = req.user.userId || req.user._id; 
     let conversation = await Conversation.findOne({ participants: userId })
-      .populate('participants', 'name email avatar role');
+      .populate('participants', PARTICIPANT_FIELDS);
     
     if (!conversation) {
       // By default, it's a 1-on-1 with admin, but we can just add the user for now
       conversation = new Conversation({ participants: [userId] });
       await conversation.save();
       // fetch again to populate
-      conversation = await Conversation.findById(conversation._id).populate('participants', 'name email avatar role');
+      conversation = await Conversation.findById(conversation._id).populate('participants', PARTICIPANT_FIELDS);
     }
     
     const { messages, hasMore } = await loadMessages(conversation._id, req.query);
@@ -66,7 +114,7 @@ exports.getChatThread = async (req, res) => {
 exports.getAllThreads = async (req, res) => {
   try {
     const threads = await Conversation.find()
-      .populate('participants', 'name email avatar role')
+      .populate('participants', PARTICIPANT_FIELDS)
       .populate('lastMessage')
       .sort({ updatedAt: -1 });
     res.status(200).json({ success: true, threads });
@@ -80,7 +128,7 @@ exports.getThreadById = async (req, res) => {
   try {
     const { threadId } = req.params;
     const conversation = await Conversation.findById(threadId)
-      .populate('participants', 'name email avatar role');
+      .populate('participants', PARTICIPANT_FIELDS);
       
     if (!conversation) return res.status(404).json({ success: false, message: 'Thread not found' });
     
@@ -97,12 +145,12 @@ exports.getThreadByUserId = async (req, res) => {
   try {
     const { userId } = req.params;
     let conversation = await Conversation.findOne({ participants: userId })
-      .populate('participants', 'name email avatar role');
+      .populate('participants', PARTICIPANT_FIELDS);
       
     if (!conversation) {
       conversation = new Conversation({ participants: [userId] });
       await conversation.save();
-      conversation = await Conversation.findById(conversation._id).populate('participants', 'name email avatar role');
+      conversation = await Conversation.findById(conversation._id).populate('participants', PARTICIPANT_FIELDS);
     }
     
     const { messages, hasMore } = await loadMessages(conversation._id, req.query);
