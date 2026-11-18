@@ -2,6 +2,7 @@ const EscrowDeal = require('../models/deal');
 const Conversation = require('../models/chat');
 const Message = require('../models/message');
 const Channel = require('../models/channel');
+const { sendPushToUsers } = require('../utils/push');
 
 // Admin creates a deal
 exports.createDeal = async (req, res) => {
@@ -90,6 +91,15 @@ exports.createDeal = async (req, res) => {
       sellerConversation.lastMessage = sellerMessage._id;
       await sellerConversation.save();
     }
+
+    const dealRecipients = [finalBuyerId, sellerId].filter(Boolean)
+      .filter((id, i, all) => all.findIndex(other => other.toString() === id.toString()) === i);
+    sendPushToUsers(dealRecipients, {
+      title: 'New escrow deal from SocialSwap',
+      body: `${channel.name || 'Channel'}: deal price ₹${Number(finalDealPrice).toLocaleString('en-IN')}. Open chat to review.`,
+      url: '/user/chat',
+      tag: 'socialswap-chat'
+    });
 
     res.status(201).json({ success: true, deal });
   } catch (error) {

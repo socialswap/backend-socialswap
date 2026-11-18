@@ -13,7 +13,7 @@ const MessageSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ["text", "image", "video", "file", "deal", "channel"],
+    enum: ["text", "image", "video", "file", "deal", "channel", "service"],
     default: "text"
   },
   text: {
@@ -39,6 +39,10 @@ const MessageSchema = new mongoose.Schema({
   channelId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'YouTubeChannel'
+  },
+  serviceId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Service'
   },
   status: {
     type: String,
