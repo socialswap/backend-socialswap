@@ -78,11 +78,13 @@ exports.sendEmailOtp = async (req, res) => {
       message: 'OTP sent successfully to email'
     });
   } catch (error) {
-    console.error('Email OTP send error:', error);
-    res.status(500).json({
+    console.error('Email OTP send error:', error.code || '', error.message);
+    const unreachable = ['ETIMEDOUT', 'ECONNECTION', 'ESOCKET', 'ECONNREFUSED'].includes(error.code);
+    res.status(unreachable ? 503 : 500).json({
       success: false,
-      message: 'Failed to send OTP',
-      error: error.message
+      message: unreachable
+        ? 'Our email service is not reachable right now. Please use "Continue with Google" or try again later.'
+        : 'Failed to send OTP. Please try again.'
     });
   }
 };

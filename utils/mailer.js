@@ -16,7 +16,12 @@ const transporter = (() => {
     auth: {
       user: SMTP_USER,
       pass: SMTP_PASS
-    }
+    },
+    // Fail in seconds, not nodemailer's default 2 minutes, when the SMTP server
+    // can't be reached (e.g. Render's free plan blocks ports 25/465/587).
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 20000
   });
 })();
 
